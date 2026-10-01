@@ -83,7 +83,7 @@
     <string name="theme">Тема</string>
     <string name="menu_about">О приложении</string>
     <string name="menu_group">Группы</string>
-    <string name="menu_configuration">Конфигурация</string>
+    <string name="menu_configuration">Конфиг</string>
     <string name="logcat">Экспорт отладочной информации</string>
     <string name="version_x">Версия (%1$s)</string>
     <string name="server_port">Удаленный порт</string>
@@ -604,6 +604,11 @@
     <string name="connection_status">Статус соединения</string>
     <string name="connection_status_active">Активно</string>
     <string name="connection_status_closed">Закрыто</string>
+    <string name="connection_empty_all">Нет соединений</string>
+    <string name="connection_empty_active">Нет активных соединений</string>
+    <string name="connection_empty_closed">Нет закрытых соединений</string>
+    <string name="connection_empty_search">Совпадающих соединений нет</string>
+    <string name="connection_empty_no_status">Статус соединения не выбран</string>
     <string name="can_not_be_empty">Не может быть пустым</string>
     <string name="action_test_config">Тест конфигурации</string>
     <string name="action_format">Формат</string>
@@ -839,8 +844,8 @@
     <string name="by_download_speed">По скорости получения</string>
     <string name="upload_speed">Скорость отправки</string>
     <string name="download_speed">Скорость получения</string>
-    <string name="outbound_dns">Исходящий DNS</string>
-    <string name="outbound_dns_sum">Определяет IP-адреса серверов исходящих подключений. Если не задано, используется прямой DNS</string>
+    <string name="outbound_dns">Outbound DNS</string>
+    <string name="outbound_dns_sum">Резолвит адреса серверов ради исходящих подключений. Если не задано, то используется Прямой DNS</string>
     <plurals name="delete_profiles_confirm_prompt">
         <item quantity="one">Вы уверены, что хотите удалить %1$d профиль?</item>
         <item quantity="few">Вы уверены, что хотите удалить %1$d профиля?</item>
@@ -848,7 +853,7 @@
         <item quantity="other">Вы уверены, что хотите удалить %1$d профилей?</item>
     </plurals>
     <string name="system_proxy">Системный прокси</string>
-    <string name="disable_version_fallback">Отключить резервную версию</string>
+    <string name="disable_version_fallback">Отключить понижение версии</string>
     <string name="enable_tasker">Включить плагин Tasker</string>
     <string name="enable_tasker_summary">Разрешить приложениям автоматизации запускать и останавливать службу. Приложения с разрешением Tasker смогут включать и отключать туннель.</string>
     <string name="app_update_auto_check_sum">Проверять раз в день при запуске приложения</string>
@@ -892,4 +897,5 @@
     <string name="system_proxy_unavailable_inbound_auth">Недоступно, если заданы имя пользователя или пароль для входящих подключений</string>
     <string name="search_outbounds">Поиск исходящих</string>
     <string name="switch_search_mode">Сменить режим поиска</string>
+    <string name="search_proxy_sets">Поиск наборов</string>
 </resources>
