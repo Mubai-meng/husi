@@ -229,7 +229,7 @@ composeApp/build/compose/jars/
 Run it with system Java (JDK/JRE 21+):
 
 ```shell
-java -jar composeApp/build/compose/jars/fr.husi-<platform>-<arch>-<version>.jar
+java -jar composeApp/build/compose/jars/com.fr.husi-<platform>-<arch>-<version>.jar
 ```
 
 Build Linux native packages (`deb/rpm/pacman`) with Java 21 dependency metadata:
@@ -520,9 +520,9 @@ Plugin name list:
 
 ### Android
 
-[![Get it on Obtainium](./docs/assets/badge_obtainium.png)](https://apps.obtainium.imranr.dev/redirect?r=obtainium://app/%7B%22id%22%3A%22fr.husi%22%2C%22url%22%3A%22https%3A%2F%2Fgithub.com%2Fxchacha20-poly1305%2Fhusi%22%2C%22author%22%3A%22xchacha20-poly1305%22%2C%22name%22%3A%22husi%22%2C%22preferredApkIndex%22%3A0%2C%22additionalSettings%22%3A%22%7B%5C%22filterReleaseTitlesByRegEx%5C%22%3A%5C%22%5E%28%3F%21plugin-%29%5C%22%2C%5C%22includePrereleases%5C%22%3Afalse%7D%22%7D)
+[![Get it on Obtainium](./docs/assets/badge_obtainium.png)](https://apps.obtainium.imranr.dev/redirect?r=obtainium://app/%7B%22id%22%3A%22com.fr.husi%22%2C%22url%22%3A%22https%3A%2F%2Fgithub.com%2Fxchacha20-poly1305%2Fhusi%22%2C%22author%22%3A%22xchacha20-poly1305%22%2C%22name%22%3A%22husi%22%2C%22preferredApkIndex%22%3A0%2C%22additionalSettings%22%3A%22%7B%5C%22filterReleaseTitlesByRegEx%5C%22%3A%5C%22%5E%28%3F%21plugin-%29%5C%22%2C%5C%22includePrereleases%5C%22%3Afalse%7D%22%7D)
 
-Or [Pre-release](https://apps.obtainium.imranr.dev/redirect?r=obtainium://app/%7B%22id%22%3A%22fr.husi%22%2C%22url%22%3A%22https%3A%2F%2Fgithub.com%2Fxchacha20-poly1305%2Fhusi%22%2C%22author%22%3A%22xchacha20-poly1305%22%2C%22name%22%3A%22husi%22%2C%22preferredApkIndex%22%3A0%2C%22additionalSettings%22%3A%22%7B%5C%22filterReleaseTitlesByRegEx%5C%22%3A%5C%22%5E%28%3F%21plugin-%29%5C%22%2C%5C%22includePrereleases%5C%22%3Atrue%7D%22%7D)
+Or [Pre-release](https://apps.obtainium.imranr.dev/redirect?r=obtainium://app/%7B%22id%22%3A%22com.fr.husi%22%2C%22url%22%3A%22https%3A%2F%2Fgithub.com%2Fxchacha20-poly1305%2Fhusi%22%2C%22author%22%3A%22xchacha20-poly1305%22%2C%22name%22%3A%22husi%22%2C%22preferredApkIndex%22%3A0%2C%22additionalSettings%22%3A%22%7B%5C%22filterReleaseTitlesByRegEx%5C%22%3A%5C%22%5E%28%3F%21plugin-%29%5C%22%2C%5C%22includePrereleases%5C%22%3Atrue%7D%22%7D)
 
 ## 🏃‍♂️ Run
 
@@ -533,8 +533,8 @@ Requirement: >= Java Runtime **21**
 _No bundled JRE for end users_
 
 ```shell
-$ fr.husi --help
-Usage: fr.husi [<options>] [<deep-link>]...
+$ com.fr.husi --help
+Usage: com.fr.husi [<options>] [<deep-link>]...
 
 Options:
   -d, --dir=<path>       Data directory

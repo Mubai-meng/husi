@@ -36,6 +36,7 @@ require (
 	github.com/sagernet/sing-snell v0.0.0-20260904135315-bc5a12ac736f
 	github.com/sagernet/sing-tun v0.9.6-0.20260924073434-3077c705bbdb
 	github.com/sagernet/sing-vmess v0.2.8
+	github.com/showwin/speedtest-go v1.8.3
 	github.com/stretchr/testify v1.12.1
 	github.com/tailscale/go-winio v0.0.0-20231025203758-c4f33415bf55
 	github.com/xchacha20-poly1305/TLS-scribe v0.13.0

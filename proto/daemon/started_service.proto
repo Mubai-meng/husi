@@ -10,7 +10,7 @@ package daemon;
 option go_package = "github.com/sagernet/sing-box/daemon";
 option java_multiple_files = true;
 option java_outer_classname = "StartedServiceProto";
-option java_package = "fr.husi.proto.daemon";
+option java_package = "com.fr.husi.proto.daemon";
 
 import "google/protobuf/empty.proto";
 

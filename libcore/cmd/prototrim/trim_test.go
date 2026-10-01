@@ -97,7 +97,7 @@ func TestTrimKeepsPreambleAndInjectsJavaOptions(t *testing.T) {
 		`option go_package = "github.com/sagernet/sing-box/daemon";`+"\n"+
 		"option java_multiple_files = true;\n"+
 		`option java_outer_classname = "StartedServiceProto";`+"\n"+
-		`option java_package = "fr.husi.proto.daemon";`+"\n")
+		`option java_package = "com.fr.husi.proto.daemon";`+"\n")
 	assert.Contains(t, trimmed, `import "google/protobuf/empty.proto";`)
 }
 

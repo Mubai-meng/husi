@@ -99,7 +99,7 @@ Truly readable code is more than just clear—it's understandable even without c
   **Good:**
 
   ```kotlin
-  import fr.husi.ktx.invariantPathString
+  import com.fr.husi.ktx.invariantPathString
   
   val geoDir = repository.externalAssetsDir.resolve("geo")
   ruleSet.path = geoDir.resolve("$name.srs").invariantPathString()

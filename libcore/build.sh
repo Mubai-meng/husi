@@ -365,7 +365,7 @@ ANJA_COMMON_ARGS=(
     -v
     -trimpath
     -buildvcs=false
-    -javapkg="fr.husi"
+    -javapkg="com.fr.husi"
 )
 
 ANJA_ANDROID_ARGS=(

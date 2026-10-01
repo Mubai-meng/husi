@@ -17,7 +17,7 @@ android {
                 "x86",
             )
         }
-        ndkVersion = "29.0.14206865"
+        ndkVersion = "28.2.13676358"
     }
     dependenciesInfo {
         includeInApk = false
@@ -31,7 +31,13 @@ android {
     buildFeatures {
         buildConfig = false
     }
-    namespace = "fr.husi"
+    packaging {
+        // protobuf 工具链带入的 edition 特性描述符，两个 runtime 依赖各打一份
+        // 且路径不同无法自动去重；运行时不读取（proto3 消息不走特性解析），
+        // 排除以去掉 APK 里的 core/ 与 java/core/ 重复资源。
+        resources.excludes += "**/java_features_proto-descriptor-set.proto.bin"
+    }
+    namespace = "com.fr.husi"
 
 }
 

@@ -11,7 +11,7 @@ import (
 )
 
 const (
-	polkitActionTakeOver  = "fr.husi.take-over-service"
+	polkitActionTakeOver  = "com.fr.husi.take-over-service"
 	polkitActionDirectory = "/usr/share/polkit-1/actions"
 	polkitActionFileName  = "husi-daemon.policy"
 	polkitActionFileMode  = 0o644

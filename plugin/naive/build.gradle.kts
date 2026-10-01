@@ -4,9 +4,9 @@ plugins {
 
 extensions.configure<com.android.build.api.dsl.ApplicationExtension> {
     defaultConfig {
-        applicationId = "fr.husi.plugin.naive"
+        applicationId = "com.fr.husi.plugin.naive"
     }
-    namespace = "fr.husi.plugin.naive"
+    namespace = "com.fr.husi.plugin.naive"
 }
 
 setupPlugin("naive")

@@ -8,7 +8,7 @@
 -keep,allowshrinking,allowoptimization class ** { *; }
 -keepattributes Exceptions,InnerClasses,Signature,Deprecated,SourceFile,LineNumberTable,*Annotation*,EnclosingMethod
 
--keep class fr.husi.** { *; }
+-keep class com.fr.husi.** { *; }
 -keep class go.** { *; }
 
 -keep public class org.ini4j.spi.** { <init>(); }

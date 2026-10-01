@@ -86,7 +86,7 @@ DropdownMenuSectionHeader(stringResource(Res.string.sort_mode))
 
 The helper lives at:
 
-`composeApp/src/commonMain/kotlin/fr/husi/compose/DropdownMenuSectionHeader.kt`
+`composeApp/src/commonMain/kotlin/com/fr/husi/compose/DropdownMenuSectionHeader.kt`
 
 It applies the current house style:
 
@@ -178,10 +178,10 @@ reasonable. Match the surrounding menu's behavior.
 
 Prefer Husi wrappers inside menu content:
 
-- `fr.husi.compose.material3.Text`
-- `fr.husi.compose.material3.Icon`
-- `fr.husi.compose.material3.Checkbox`
-- `fr.husi.compose.DropdownMenuSectionHeader`
+- `com.fr.husi.compose.material3.Text`
+- `com.fr.husi.compose.material3.Icon`
+- `com.fr.husi.compose.material3.Checkbox`
+- `com.fr.husi.compose.DropdownMenuSectionHeader`
 
 Use Compose resource helpers:
 
@@ -196,15 +196,15 @@ when the visual treatment is a deliberate app convention.
 Before editing:
 
 ```bash
-rg -n "DropdownMenuPopup|MenuDefaults\\.Label|more_vert|actions\\s*=" composeApp/src/commonMain/kotlin/fr/husi -g '*.kt'
+rg -n "DropdownMenuPopup|MenuDefaults\\.Label|more_vert|actions\\s*=" composeApp/src/commonMain/kotlin/com/fr/husi -g '*.kt'
 ```
 
 After editing:
 
 ```bash
-rg -n "MenuDefaults\\.Label" composeApp/src/commonMain/kotlin/fr/husi -g '*.kt'
+rg -n "MenuDefaults\\.Label" composeApp/src/commonMain/kotlin/com/fr/husi -g '*.kt'
 make test_gradle
-git diff --check -- composeApp/src/commonMain/kotlin/fr/husi
+git diff --check -- composeApp/src/commonMain/kotlin/com/fr/husi
 ```
 
 If the change touches Android-only UI or resources, also run:
@@ -215,7 +215,7 @@ make apk_debug
 
 Known reference implementations:
 
-- `composeApp/src/commonMain/kotlin/fr/husi/ui/RouteSettingsScreen.kt`
-- `composeApp/src/commonMain/kotlin/fr/husi/ui/dashboard/Dashboard.kt`
-- `composeApp/src/commonMain/kotlin/fr/husi/ui/profile/ProfileEditorScreen.kt`
-- `composeApp/src/commonMain/kotlin/fr/husi/compose/DropdownMenuSectionHeader.kt`
+- `composeApp/src/commonMain/kotlin/com/fr/husi/ui/RouteSettingsScreen.kt`
+- `composeApp/src/commonMain/kotlin/com/fr/husi/ui/dashboard/Dashboard.kt`
+- `composeApp/src/commonMain/kotlin/com/fr/husi/ui/profile/ProfileEditorScreen.kt`
+- `composeApp/src/commonMain/kotlin/com/fr/husi/compose/DropdownMenuSectionHeader.kt`

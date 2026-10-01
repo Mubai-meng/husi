@@ -1,0 +1,347 @@
+package com.fr.husi.ui.profile
+
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.windowInsetsBottomHeight
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Scaffold
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.AnnotatedString
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
+import dev.chrisbanes.haze.hazeSource
+import dev.chrisbanes.haze.rememberHazeState
+import com.fr.husi.compose.BackHandler
+import com.fr.husi.compose.CapsuleTopBar
+import com.fr.husi.compose.IconMaskColors
+import com.fr.husi.compose.IconMaskShapes
+import com.fr.husi.compose.ListPreference
+import com.fr.husi.compose.MaskedIcon
+import com.fr.husi.compose.MultilineTextField
+import com.fr.husi.compose.PreferenceCategory
+import com.fr.husi.compose.PreferenceType
+import com.fr.husi.compose.ProvidePreferenceLocals
+import com.fr.husi.compose.SimpleIconButton
+import com.fr.husi.compose.SwitchPreference
+import com.fr.husi.compose.TextButton
+import com.fr.husi.compose.TextFieldPreference
+import com.fr.husi.compose.UIntegerTextField
+import com.fr.husi.compose.material3.Icon
+import com.fr.husi.compose.material3.Text
+import com.fr.husi.compose.preferenceGroup
+import com.fr.husi.ktx.contentOrUnset
+import com.fr.husi.resources.Res
+import com.fr.husi.resources.apply
+import com.fr.husi.resources.assistant_direction
+import com.fr.husi.resources.certificates
+import com.fr.husi.resources.close
+import com.fr.husi.resources.done
+import com.fr.husi.resources.enhanced_encryption
+import com.fr.husi.resources.http_host
+import com.fr.husi.resources.http_path
+import com.fr.husi.resources.multiple_stop
+import com.fr.husi.resources.mux_number
+import com.fr.husi.resources.no
+import com.fr.husi.resources.numbers
+import com.fr.husi.resources.obfs_mode
+import com.fr.husi.resources.ok
+import com.fr.husi.resources.plugin
+import com.fr.husi.resources.question_mark
+import com.fr.husi.resources.router
+import com.fr.husi.resources.security
+import com.fr.husi.resources.sip003_editor
+import com.fr.husi.resources.sip003_pick_plugin_first
+import com.fr.husi.resources.tls
+import com.fr.husi.resources.unsaved_changes_prompt
+import com.fr.husi.resources.v2ray_transport
+import com.fr.husi.resources.vpn_key
+import com.fr.husi.results.LocalResultEventBus
+import me.zhanghai.compose.preference.ListPreferenceType
+import org.jetbrains.compose.resources.stringResource
+import org.jetbrains.compose.resources.vectorResource
+
+@Composable
+fun SIP003EditorScreen(
+    pluginName: String,
+    initialOpts: String,
+    resultKey: String,
+    onBack: () -> Unit,
+) {
+    val viewModel: SIP003EditorViewModel = viewModel {
+        SIP003EditorViewModel(pluginName, initialOpts)
+    }
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val isDirty by viewModel.isDirty.collectAsStateWithLifecycle()
+    val resultBus = LocalResultEventBus.current
+
+    var showBackAlert by remember { mutableStateOf(false) }
+
+    val saveAndExit: () -> Unit = {
+        resultBus.sendResult<String?>(resultKey, viewModel.serialize())
+        onBack()
+    }
+    val discardAndExit: () -> Unit = {
+        resultBus.sendResult<String?>(resultKey, null)
+        onBack()
+    }
+    val confirmBack: () -> Unit = {
+        if (isDirty) {
+            showBackAlert = true
+        } else {
+            discardAndExit()
+        }
+    }
+
+    BackHandler(enabled = isDirty) {
+        showBackAlert = true
+    }
+
+    val windowInsets = WindowInsets.safeDrawing
+    val hazeState = rememberHazeState()
+    Scaffold(
+        modifier = Modifier.fillMaxSize(),
+        topBar = {
+            CapsuleTopBar(
+                hazeState = hazeState,
+                navigationIcon = {
+                    SimpleIconButton(
+                        imageVector = vectorResource(Res.drawable.close),
+                        contentDescription = stringResource(Res.string.close),
+                        onClick = confirmBack,
+                    )
+                },
+                title = { Text(stringResource(Res.string.sip003_editor)) },
+                windowInsets = windowInsets.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal),
+                actions = {
+                    CapsuleActionButton {
+                        SimpleIconButton(
+                            imageVector = vectorResource(Res.drawable.done),
+                            contentDescription = stringResource(Res.string.apply),
+                            onClick = saveAndExit,
+                        )
+                    }
+                },
+            )
+        },
+    ) { innerPadding ->
+        ProvidePreferenceLocals {
+            val formModifier = Modifier.hazeSource(hazeState)
+            when (pluginName) {
+                SIP003_OBFS_LOCAL -> ObfsLocalForm(uiState, viewModel, innerPadding, formModifier)
+                SIP003_V2RAY_PLUGIN -> V2RayPluginForm(uiState, viewModel, innerPadding, formModifier)
+                else -> EmptyForm(innerPadding, formModifier)
+            }
+        }
+    }
+
+    if (showBackAlert) {
+        AlertDialog(
+            onDismissRequest = { showBackAlert = false },
+            confirmButton = {
+                TextButton(stringResource(Res.string.ok)) {
+                    saveAndExit()
+                }
+            },
+            dismissButton = {
+                TextButton(stringResource(Res.string.no)) {
+                    discardAndExit()
+                }
+            },
+            icon = { Icon(vectorResource(Res.drawable.question_mark), null) },
+            title = { Text(stringResource(Res.string.unsaved_changes_prompt)) },
+        )
+    }
+}
+
+@Composable
+private fun ObfsLocalForm(
+    uiState: SIP003EditorUiState,
+    viewModel: SIP003EditorViewModel,
+    contentPadding: PaddingValues,
+    modifier: Modifier = Modifier,
+) {
+    LazyColumn(
+        modifier = modifier.fillMaxSize(),
+        contentPadding = contentPadding,
+    ) {
+        item("category", PreferenceType.CATEGORY) {
+            PreferenceCategory(text = { Text(stringResource(Res.string.plugin)) })
+        }
+        preferenceGroup {
+            ListPreference(
+                value = uiState.obfs,
+                values = ObfsMode.entries,
+                onValueChange = viewModel::setObfs,
+                title = { Text(stringResource(Res.string.obfs_mode)) },
+                icon = {
+                    MaskedIcon(
+                        Res.drawable.enhanced_encryption,
+                        color = IconMaskColors.IconLightOrange,
+                    )
+                },
+                summary = { Text(uiState.obfs.value) },
+                type = ListPreferenceType.DROPDOWN_MENU,
+                valueToText = { AnnotatedString(it.value) },
+            )
+            TextFieldPreference(
+                value = uiState.obfsHost,
+                onValueChange = viewModel::setObfsHost,
+                title = { Text(stringResource(Res.string.http_host)) },
+                textToValue = { it },
+                icon = {
+                    MaskedIcon(
+                        Res.drawable.router,
+                        color = IconMaskColors.IconLightBlue,
+                    )
+                },
+                summary = { Text(contentOrUnset(uiState.obfsHost)) },
+                valueToText = { it },
+            )
+        }
+        item("bottom", "padding") {
+            Spacer(modifier = Modifier.windowInsetsBottomHeight(WindowInsets.navigationBars))
+        }
+    }
+}
+
+@Composable
+private fun V2RayPluginForm(
+    uiState: SIP003EditorUiState,
+    viewModel: SIP003EditorViewModel,
+    contentPadding: PaddingValues,
+    modifier: Modifier = Modifier,
+) {
+    LazyColumn(
+        modifier = modifier.fillMaxSize(),
+        contentPadding = contentPadding,
+    ) {
+        item("category", PreferenceType.CATEGORY) {
+            PreferenceCategory(text = { Text(stringResource(Res.string.plugin)) })
+        }
+        preferenceGroup {
+            SwitchPreference(
+                value = uiState.tls,
+                onValueChange = viewModel::setTls,
+                title = { Text(stringResource(Res.string.tls)) },
+                icon = {
+                    MaskedIcon(
+                        Res.drawable.security,
+                        color = IconMaskColors.IconCoral,
+                    )
+                },
+            )
+            ListPreference(
+                value = uiState.mode,
+                values = V2RayMode.entries,
+                onValueChange = viewModel::setMode,
+                title = { Text(stringResource(Res.string.v2ray_transport)) },
+                icon = {
+                    MaskedIcon(
+                        Res.drawable.multiple_stop,
+                        color = IconMaskColors.IconLightGreen,
+                    )
+                },
+                summary = { Text(uiState.mode.value) },
+                type = ListPreferenceType.DROPDOWN_MENU,
+                valueToText = { AnnotatedString(it.value) },
+            )
+            TextFieldPreference(
+                value = uiState.host,
+                onValueChange = viewModel::setHost,
+                title = { Text(stringResource(Res.string.http_host)) },
+                textToValue = { it },
+                icon = {
+                    MaskedIcon(
+                        Res.drawable.router,
+                        color = IconMaskColors.IconLightBlue,
+                    )
+                },
+                summary = { Text(contentOrUnset(uiState.host)) },
+                valueToText = { it },
+            )
+            TextFieldPreference(
+                value = uiState.path,
+                onValueChange = viewModel::setPath,
+                title = { Text(stringResource(Res.string.http_path)) },
+                textToValue = { it },
+                icon = {
+                    MaskedIcon(
+                        Res.drawable.assistant_direction,
+                        color = IconMaskColors.IconLightOrange,
+                    )
+                },
+                summary = { Text(contentOrUnset(uiState.path)) },
+                valueToText = { it },
+            )
+            TextFieldPreference(
+                value = uiState.mux,
+                onValueChange = viewModel::setMux,
+                title = { Text(stringResource(Res.string.mux_number)) },
+                textToValue = { it.toIntOrNull() ?: DEFAULT_V2RAY_MUX },
+                icon = {
+                    MaskedIcon(
+                        resource = Res.drawable.numbers,
+                        color = IconMaskColors.IconLightYellow,
+                        shape = IconMaskShapes.route(),
+                    )
+                },
+                summary = { Text(uiState.mux.toString()) },
+                valueToText = { it.toString() },
+                textField = { value, onValueChange, onOk ->
+                    UIntegerTextField(value, onValueChange, onOk)
+                },
+            )
+            TextFieldPreference(
+                value = uiState.certRaw,
+                onValueChange = viewModel::setCertRaw,
+                title = { Text(stringResource(Res.string.certificates)) },
+                textToValue = { it },
+                icon = {
+                    MaskedIcon(
+                        Res.drawable.vpn_key,
+                        color = IconMaskColors.IconWarmGray,
+                        shape = IconMaskShapes.credential(),
+                    )
+                },
+                summary = { Text(contentOrUnset(uiState.certRaw)) },
+                valueToText = { it },
+                textField = { value, onValueChange, onOk ->
+                    MultilineTextField(value, onValueChange, onOk)
+                },
+            )
+        }
+        item("bottom", "padding") {
+            Spacer(modifier = Modifier.windowInsetsBottomHeight(WindowInsets.navigationBars))
+        }
+    }
+}
+
+@Composable
+private fun EmptyForm(
+    contentPadding: PaddingValues,
+    modifier: Modifier = Modifier,
+) {
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            .padding(contentPadding),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(stringResource(Res.string.sip003_pick_plugin_first))
+    }
+}

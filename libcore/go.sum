@@ -265,6 +265,8 @@ github.com/sagernet/wireguard-go v0.0.8-0.20260917055437-bc6039037038 h1:1APVQQ0
 github.com/sagernet/wireguard-go v0.0.8-0.20260917055437-bc6039037038/go.mod h1:er10sELpmzLXq7S7Pbc1Zsbyapcr+/gxNAHKTo6fzVA=
 github.com/sagernet/ws v0.0.0-20231204124109-acfe8907c854 h1:6uUiZcDRnZSAegryaUGwPC/Fj13JSHwiTftrXhMmYOc=
 github.com/sagernet/ws v0.0.0-20231204124109-acfe8907c854/go.mod h1:LtfoSK3+NG57tvnVEHgcuBW9ujgE8enPSgzgwStwCAA=
+github.com/showwin/speedtest-go v1.8.3 h1:x988hyZFsa5V1EEwox84niAji632uxBTk8Clsc1itF8=
+github.com/showwin/speedtest-go v1.8.3/go.mod h1:N4bn2lgNNWmfJyC1AIHD4T5wYhU+9D21OfacVhJsxiU=
 github.com/smallstep/pkcs7 v0.1.1 h1:x+rPdt2W088V9Vkjho4KtoggyktZJlMduZAtRHm68LU=
 github.com/smallstep/pkcs7 v0.1.1/go.mod h1:dL6j5AIz9GHjVEBTXtW+QliALcgM19RtXaTeyxI+AfA=
 github.com/stretchr/testify v1.12.1 h1:EuwCh5fleGS7H32xRwO3wRGT7DxrDhLAT6FF8MpWDWE=

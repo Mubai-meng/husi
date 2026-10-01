@@ -281,7 +281,7 @@ func runSystemctl(arguments ...string) error {
 //
 // If the running executable already lives in a package-managed protected
 // directory (root-owned, non-world-writable), it is used in place. That
-// covers deb/rpm/pacman layouts such as /usr/lib/fr.husi/bin/husi-core.
+// covers deb/rpm/pacman layouts such as /usr/lib/com.fr.husi/bin/husi-core.
 // Otherwise the caller copies the pair to defaultInstallBin.
 func resolveInstallBinary(executablePath string) (installBin string, useInPlace bool, err error) {
 	resolvedPath, err := resolveExecutablePath(executablePath)

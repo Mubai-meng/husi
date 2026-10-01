@@ -5,7 +5,7 @@ package husi.v1;
 option go_package = "libcore/pb/husi/v1;husiv1";
 option java_multiple_files = true;
 option java_outer_classname = "CoreProto";
-option java_package = "fr.husi.proto.v1";
+option java_package = "com.fr.husi.proto.v1";
 
 // CoreService is what husi adds to a running instance beyond the contract it
 // shares with sing-box. Everything sing-box's daemon.StartedService already
@@ -107,7 +107,7 @@ enum ServiceRunState {
 }
 
 // Bytes per second, plus the totals of the current session. Mirrors
-// fr.husi.bg.SpeedStats; "bypass" outbound usage is not counted.
+// com.fr.husi.bg.SpeedStats; "bypass" outbound usage is not counted.
 message SpeedUpdate {
   int64 tx_rate_proxy = 1;
   int64 rx_rate_proxy = 2;

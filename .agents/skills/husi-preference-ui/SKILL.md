@@ -1,29 +1,29 @@
 ---
 name: husi-preference-ui
-description: Husi Preference UI conventions for Compose Multiplatform. Use whenever editing any settings or profile-editor preference UI in composeApp/, including Preference.kt helpers, preferenceGroup, PreferenceGroupDefaults, PreferenceItemSurface, the fr.husi.compose preference row wrappers, PreferenceCategory layout, conditional preference sections, MaskedIcon, IconMaskColors, IconMaskShapes, or platform SettingsScreenPlatform actuals.
+description: Husi Preference UI conventions for Compose Multiplatform. Use whenever editing any settings or profile-editor preference UI in composeApp/, including Preference.kt helpers, preferenceGroup, PreferenceGroupDefaults, PreferenceItemSurface, the com.fr.husi.compose preference row wrappers, PreferenceCategory layout, conditional preference sections, MaskedIcon, IconMaskColors, IconMaskShapes, or platform SettingsScreenPlatform actuals.
 ---
 
 # Husi Preference UI
 
 Use this skill for every setting or profile-editor preference row in `composeApp/`.
 
-## Import rows from `fr.husi.compose`, never from `me.zhanghai`
+## Import rows from `com.fr.husi.compose`, never from `me.zhanghai`
 
-`fr.husi.compose.PreferenceItems.kt` redeclares the upstream rows with the same signatures and wraps
+`com.fr.husi.compose.PreferenceItems.kt` redeclares the upstream rows with the same signatures and wraps
 each one in `PreferenceItemSurface`, which is what gives a row its own container. Importing the
 upstream composable directly produces a row with no background that visually merges into its
 neighbours.
 
 ```kotlin
-import fr.husi.compose.ListPreference
-import fr.husi.compose.Preference
-import fr.husi.compose.SliderPreference
-import fr.husi.compose.SwitchPreference
-import fr.husi.compose.TextFieldPreference
+import com.fr.husi.compose.ListPreference
+import com.fr.husi.compose.Preference
+import com.fr.husi.compose.SliderPreference
+import com.fr.husi.compose.SwitchPreference
+import com.fr.husi.compose.TextFieldPreference
 ```
 
 `ListPreferenceType` is the only thing a call site still takes from `me.zhanghai.compose.preference`;
-it is not a row. `ProvidePreferenceLocals` has a wrapper in `fr.husi.compose` too — it provides the
+it is not a row. `ProvidePreferenceLocals` has a wrapper in `com.fr.husi.compose` too — it provides the
 upstream locals *and* paints `PreferenceGroupDefaults.screenContainerColor`, the ground rows sit on,
 so a screen that imports the upstream one loses every group's edges. `PreferenceCategory` likewise
 has a wrapper, but that one deliberately gets **no** item surface: it is a header that sits
@@ -90,7 +90,7 @@ The radii are literal dp rather than `MaterialTheme.shapes` entries on purpose: 
 radius only read as one group if they move together, and `shapes.large` is 16dp, not 20dp.
 
 A row is **brighter** than the ground it sits on, not darker. That is why every preference screen
-wraps its list in `fr.husi.compose.ProvidePreferenceLocals`, which paints `screenContainerColor`
+wraps its list in `com.fr.husi.compose.ProvidePreferenceLocals`, which paints `screenContainerColor`
 behind it; a screen that skips it leaves rows invisible against a light background.
 
 Rows never pass a position. A row's own corners are always small, and the group's clip rounds the
@@ -179,17 +179,17 @@ Before editing, list the row wrappers that already exist and the semantic mask s
 row reuses them instead of importing upstream or defining a local shape:
 
 ```bash
-rg -n "^fun " composeApp/src/commonMain/kotlin/fr/husi/compose/PreferenceItems.kt
-rg -n "fun \\w+\\(\\): Shape" composeApp/src/commonMain/kotlin/fr/husi/compose/Preference.kt
+rg -n "^fun " composeApp/src/commonMain/kotlin/com/fr/husi/compose/PreferenceItems.kt
+rg -n "fun \\w+\\(\\): Shape" composeApp/src/commonMain/kotlin/com/fr/husi/compose/Preference.kt
 ```
 
 Before finishing, run targeted searches:
 
 ```bash
-rg -n "HorizontalDivider" composeApp/src/commonMain/kotlin/fr/husi/ui/settings composeApp/src/commonMain/kotlin/fr/husi/ui/profile
+rg -n "HorizontalDivider" composeApp/src/commonMain/kotlin/com/fr/husi/ui/settings composeApp/src/commonMain/kotlin/com/fr/husi/ui/profile
 rg -n "^import me\\.zhanghai\\.compose\\.preference\\.(Preference|SwitchPreference|TwoTargetSwitchPreference|ListPreference|MultiSelectListPreference|TextFieldPreference|SliderPreference|ProvidePreferenceLocals)$" composeApp/src
-rg -n "icon = \\{\\s*Icon\\(" composeApp/src/commonMain/kotlin/fr/husi/ui/settings/ composeApp/src/androidMain/kotlin/fr/husi/ui/SettingsScreenPlatform.android.kt composeApp/src/desktopMain/kotlin/fr/husi/ui/SettingsScreenPlatform.desktop.kt
-rg -n "IconMaskShapes\\.(risk|credential|route)\\(\\)" composeApp/src/commonMain/kotlin/fr/husi/ui composeApp/src/commonMain/kotlin/fr/husi/compose/Preference.kt
+rg -n "icon = \\{\\s*Icon\\(" composeApp/src/commonMain/kotlin/com/fr/husi/ui/settings/ composeApp/src/androidMain/kotlin/com/fr/husi/ui/SettingsScreenPlatform.android.kt composeApp/src/desktopMain/kotlin/com/fr/husi/ui/SettingsScreenPlatform.desktop.kt
+rg -n "IconMaskShapes\\.(risk|credential|route)\\(\\)" composeApp/src/commonMain/kotlin/com/fr/husi/ui composeApp/src/commonMain/kotlin/com/fr/husi/compose/Preference.kt
 ```
 
 The first two searches must return nothing: a divider line inside a group and an upstream row import

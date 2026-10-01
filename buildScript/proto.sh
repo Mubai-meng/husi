@@ -34,7 +34,7 @@ fi
 
 # The rpcs husi calls on daemon.StartedService, which is what the vendored copy
 # is trimmed down to. This is the same list as the method constants in
-# composeApp .../fr/husi/core/CoreClient.kt; using a new upstream rpc means
+# composeApp .../com/fr/husi/core/CoreClient.kt; using a new upstream rpc means
 # adding it here and re-running `make proto`.
 KEEP_STARTED_SERVICE_RPCS=(
   GetVersion GetStartedAt URLTest

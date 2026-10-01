@@ -79,7 +79,7 @@
     </queries>
 
     <application
-        android:name="fr.husi.Application"
+        android:name="com.fr.husi.Application"
         android:allowBackup="true"
         android:banner="@drawable/ic_banner"
         android:dataExtractionRules="@xml/backup_rules"
@@ -173,7 +173,7 @@
         <!--
             The launcher entry lives on an alias so that it can be disabled to hide the app from
             the launcher without breaking deep links, shortcuts or the quick settings tile.
-            See fr.husi.LauncherIcon.
+            See com.fr.husi.LauncherIcon.
         -->
         <activity-alias
             android:name=".ui.LauncherActivityAlias"
@@ -213,7 +213,7 @@
         </activity-alias>
 
         <activity
-            android:name="fr.husi.ui.VpnRequestActivity"
+            android:name="com.fr.husi.ui.VpnRequestActivity"
             android:excludeFromRecents="true"
             android:taskAffinity=""
             android:theme="@style/Theme.Dialog" />
@@ -320,7 +320,7 @@
             android:exported="false"
             tools:node="merge">
             <meta-data
-                android:name="fr.husi.Application"
+                android:name="com.fr.husi.Application"
                 android:value="androidx.startup" />
             <meta-data
                 android:name="androidx.work.WorkManagerInitializer"
@@ -344,7 +344,7 @@
             </intent-filter>
         </receiver>
 
-        <!-- Restores the launcher icon when *#*#231230#*#* is dialled, see fr.husi.LauncherIcon. -->
+        <!-- Restores the launcher icon when *#*#231230#*#* is dialled, see com.fr.husi.LauncherIcon. -->
         <receiver
             android:name=".SecretCodeReceiver"
             android:exported="true">
@@ -359,7 +359,7 @@
         </receiver>
 
         <receiver
-            android:name="fr.husi.tasker.TaskerReceiver"
+            android:name="com.fr.husi.tasker.TaskerReceiver"
             android:directBootAware="true"
             android:enabled="false"
             android:exported="true"
@@ -372,7 +372,7 @@
         </receiver>
 
         <activity
-            android:name="fr.husi.tasker.TaskerActivity"
+            android:name="com.fr.husi.tasker.TaskerActivity"
             android:enabled="false"
             android:exported="true">
             <intent-filter>

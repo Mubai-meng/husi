@@ -1,0 +1,32 @@
+package com.fr.husi.libcore
+
+import com.fr.husi.BuildConfig
+import com.fr.husi.CertProvider
+import com.fr.husi.bg.AndroidPlatformInterface
+import com.fr.husi.database.DataStore
+import com.fr.husi.repository.resolveAndroidRepository
+
+actual fun createBoxService(isBgProcess: Boolean): Service? {
+    return if (isBgProcess) {
+        val service = Libcore.newService(BuildConfig.VERSION_NAME, AndroidPlatformInterface())
+        // Same parent directory StartService uses for the long-lived pool; URL
+        // tests create transient subdirs under it via pluginpool.RunWithPlugins.
+        val pluginDir = resolveAndroidRepository().noBackupFilesDir.resolve("plugin")
+        pluginDir.mkdirs()
+        service.setPluginWorkingDir(pluginDir.absolutePath)
+        service
+    } else {
+        null
+    }
+}
+
+actual fun loadCA(provider: Int) {
+    val certOption = when (DataStore.certProvider.getBlocking()) {
+        CertProvider.SYSTEM -> Libcore.CertSystem
+        CertProvider.MOZILLA -> Libcore.CertMozilla
+        CertProvider.SYSTEM_AND_USER -> Libcore.CertWithUserTrust
+        CertProvider.CHROME -> Libcore.CertChrome
+        else -> Libcore.CertSystem
+    }
+    Libcore.setupRootCA(certOption)
+}

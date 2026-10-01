@@ -14,8 +14,8 @@ import (
 
 const (
 	darwinInstallBin   = "/Library/Application Support/husi/bin/husi-core"
-	darwinPlistPath    = "/Library/LaunchDaemons/fr.husi.daemon.plist"
-	darwinServiceLabel = "fr.husi.daemon"
+	darwinPlistPath    = "/Library/LaunchDaemons/com.fr.husi.daemon.plist"
+	darwinServiceLabel = "com.fr.husi.daemon"
 )
 
 func ServiceInstall(workingDir string) error {

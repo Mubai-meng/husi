@@ -2,6 +2,7 @@ package libcore
 
 import (
 	"context"
+	"encoding/json"
 	"time"
 
 	"github.com/sagernet/sing-box/common/networkquality"
@@ -110,6 +111,93 @@ func (s *applicationService) StandaloneURLTest(ctx context.Context, req *husiv1.
 		return nil, urltest.WrapError(err)
 	}
 	return &husiv1.StandaloneURLTestResponse{LatencyMs: latency}, nil
+}
+
+// SpeedTestRun streams bandwidth-test events from a throwaway instance in this
+// host process. Cancelling the stream cancels the session (the session ctx is
+// bound to the stream ctx) and closes the instance.
+func (s *applicationService) SpeedTestRun(req *husiv1.SpeedTestRunRequest, stream husiv1.ApplicationService_SpeedTestRunServer) error {
+	// ⚠️ 崩溃修复(2026-09-29 SIGABRT in :bg): 会话 ctx 绝不能从
+	// stream.Context() 派生 —— 那会继承宿主启动时的 service registry,
+	// 其中已注册运行实例的 platformInterface; registerPlatformInterface 的
+	// MustRegister 会把它覆盖成 forTest=true 的测速 wrapper, 运行实例
+	// 之后从 ctx 解析 PlatformInterface 即拿到状态错误的 wrapper, 触发
+	// fatal abort。baseContext 为每次会话构建全新的独立 registry。
+	base := baseContext(s.platformInterface)
+	ctx, cancel := context.WithCancel(base)
+	defer cancel()
+
+	// stream 取消(客户端断开/取消测速) → 取消独立 ctx。
+	streamDone := make(chan struct{})
+	defer close(streamDone)
+	go func() {
+		select {
+		case <-stream.Context().Done():
+			cancel()
+		case <-streamDone:
+		}
+	}()
+
+	events := make(chan map[string]any, 16)
+	startDone := make(chan error, 1)
+
+	go func() {
+		_, startErr := startSpeedTestSession(
+			ctx,
+			s.platformInterface,
+			speedTestRunRequest{
+				Config:          req.GetConfig(),
+				OutboundTag:     req.GetOutboundTag(),
+				MaxConnections:  int(req.GetMaxConnections()),
+				DownloadSeconds: req.GetDownloadSeconds(),
+				UploadSeconds:   req.GetUploadSeconds(),
+				MeasureUpload:   req.GetMeasureUpload(),
+				ServerKeyword:   req.GetServerKeyword(),
+			},
+			func(payload map[string]any) {
+				select {
+				case events <- payload:
+				case <-ctx.Done():
+				}
+			},
+		)
+		startDone <- startErr
+	}()
+
+	// 启动阶段: 失败立即报错; 成功后进入事件转发循环。
+	select {
+	case err := <-startDone:
+		if err != nil {
+			return rpcError(err, codes.FailedPrecondition)
+		}
+	case <-ctx.Done():
+		return status.Error(codes.Canceled, "speedtest: stream cancelled")
+	}
+
+	for {
+		select {
+		case payload := <-events:
+			data, err := json.Marshal(payload)
+			if err != nil {
+				continue
+			}
+			if err = stream.Send(&husiv1.SpeedTestEvent{Json: string(data)}); err != nil {
+				return err
+			}
+			// done 是终态事件: 发完即收尾(实例由会话 goroutine 自行关闭)。
+			if phase, _ := payload["phase"].(string); phase == "done" {
+				return nil
+			}
+		case err := <-startDone:
+			// 防御: 正常流程上面已消费; 若再次到达说明启动失败。
+			if err != nil {
+				return rpcError(err, codes.FailedPrecondition)
+			}
+			return status.Error(codes.Internal, "speedtest: session ended without done event")
+		case <-ctx.Done():
+			return status.Error(codes.Canceled, "speedtest: stream cancelled")
+		}
+	}
 }
 
 func (s *applicationService) GetCert(ctx context.Context, req *husiv1.GetCertRequest) (*husiv1.GetCertResponse, error) {

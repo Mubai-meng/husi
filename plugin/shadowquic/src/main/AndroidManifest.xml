@@ -17,8 +17,8 @@
         android:label="Shadowquic Plugin"
         android:roundIcon="@mipmap/ic_launcher_round">
         <provider
-            android:name="fr.husi.plugin.shadowquic.BinaryProvider"
-            android:authorities="fr.husi.plugin.shadowquic.BinaryProvider"
+            android:name="com.fr.husi.plugin.shadowquic.BinaryProvider"
+            android:authorities="com.fr.husi.plugin.shadowquic.BinaryProvider"
             android:directBootAware="true"
             android:exported="true"
             tools:ignore="ExportedContentProvider">
@@ -28,7 +28,7 @@
             <intent-filter>
                 <action android:name="io.nekohasekai.sagernet.plugin.ACTION_NATIVE_PLUGIN" />
                 <data
-                    android:host="fr.husi"
+                    android:host="com.fr.husi"
                     android:path="/shadowquic-plugin"
                     android:scheme="plugin" />
             </intent-filter>

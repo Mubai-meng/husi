@@ -9,7 +9,7 @@ import "husi/v1/daemon.proto";
 option go_package = "libcore/pb/husi/v1;husiv1";
 option java_multiple_files = true;
 option java_outer_classname = "ApplicationProto";
-option java_package = "fr.husi.proto.v1";
+option java_package = "com.fr.husi.proto.v1";
 
 // ApplicationService covers work that needs no running instance but does need
 // the protocol registry of the host that will run the config. Evaluating these
@@ -37,6 +37,13 @@ service ApplicationService {
   rpc GetCert(GetCertRequest) returns (GetCertResponse);
   rpc StandaloneSTUNTest(StandaloneSTUNTestRequest) returns (stream daemon.STUNTestProgress);
   rpc StandaloneNetworkQualityTest(StandaloneNetworkQualityTestRequest) returns (stream daemon.NetworkQualityTestProgress);
+  // SpeedTest runs a bandwidth (throughput) test through a throwaway instance
+  // inside the core host — same placement as StandaloneURLTest, and unlike the
+  // gomobile SpeedTestStart binding it inherits the host's platform interface,
+  // so outbound sockets are protected even while a VPN service is up. Events
+  // stream back as the same JSON shapes the gomobile SpeedTestListener emits;
+  // cancelling the stream cancels the session and closes the instance.
+  rpc SpeedTestRun(SpeedTestRunRequest) returns (stream SpeedTestEvent);
 }
 
 message CheckConfigRequest {
@@ -119,4 +126,26 @@ message StandaloneNetworkQualityTestRequest {
   bool serial = 2;
   int32 max_runtime_seconds = 3;
   bool http3 = 4;
+}
+
+// SpeedTestRunRequest mirrors the gomobile SpeedTestStart params. The config
+// is rewritten into the speedtest loopback shape by the host (mixed inbound on
+// 127.0.0.1 + route.final = tested outbound), exactly like the JNI path.
+message SpeedTestRunRequest {
+  // Node config JSON (buildConfig(profile, forTest = true) output).
+  string config = 1;
+  // Empty selects the first testable outbound of the config.
+  string outbound_tag = 2;
+  int32 max_connections = 3;
+  int32 download_seconds = 4;
+  int32 upload_seconds = 5;
+  bool measure_upload = 6;
+  string server_keyword = 7;
+}
+
+// SpeedTestEvent carries the gomobile SpeedTestListener JSON verbatim:
+// {"phase":"server"|"download"|"upload","rate_bps":...,"message":...} and the
+// final {"phase":"done","download_bps":...,"upload_bps":...,"error":...}.
+message SpeedTestEvent {
+  string json = 1;
 }

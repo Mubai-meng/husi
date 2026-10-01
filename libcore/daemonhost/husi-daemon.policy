@@ -24,7 +24,7 @@
   <vendor>Husi</vendor>
   <vendor_url>https://github.com/xchacha20-poly1305/husi</vendor_url>
 
-  <action id="fr.husi.take-over-service">
+  <action id="com.fr.husi.take-over-service">
     <description>Take over the Husi system daemon</description>
     <description xml:lang="zh_CN">接管虎兕系统守护进程</description>
     <description xml:lang="zh_TW">接管虎兕系統守護行程</description>

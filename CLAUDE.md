@@ -26,7 +26,7 @@ wrong.
 The target list is the root `Makefile` and the table in AGENTS.md — check there **first**.
 Reach for `./gradlew` only for something no target expresses, and only in the forms AGENTS.md
 already documents, such as running one test class:
-`./gradlew :composeApp:desktopTest --tests fr.husi.SomeTest`.
+`./gradlew :composeApp:desktopTest --tests com.fr.husi.SomeTest`.
 
 ## Read the matching skill before editing
 

@@ -286,7 +286,7 @@ val generateDesktopProguardMappingConfig = tasks.register("generateDesktopProgua
 }
 
 buildkonfig {
-    packageName = "fr.husi"
+    packageName = "com.fr.husi"
     exposeObjectWithName = "BuildConfig"
 
     defaultConfigs {
@@ -299,7 +299,7 @@ val generateDesktopPlatformInfo = tasks.register<GeneratePlatformInfoTask>("gene
     val outputDir = layout.buildDirectory.dir("generated/platformInfo/desktop/${desktopTarget.id}")
     inputs.property("desktopTarget", desktopTarget.toString())
     this.outputDir.set(outputDir)
-    packageName.set("fr.husi.platform")
+    packageName.set("com.fr.husi.platform")
     fileName.set("PlatformInfo.desktop.kt")
     platform.set(
         when (desktopTarget.platform) {
@@ -318,7 +318,7 @@ kotlin {
     }
 
     android {
-        namespace = "fr.husi.lib"
+        namespace = "com.fr.husi.lib"
         buildToolsVersion = "37.0.0"
         compileSdk {
             version = release(37) {
@@ -356,6 +356,7 @@ kotlin {
                 implementation(libs.androidx.room.runtime)
                 implementation(libs.androidx.sqlite.bundled)
                 implementation(libs.kotlinx.serialization.json)
+                implementation(libs.kaml)
                 implementation(libs.kotlinx.datetime)
 
                 implementation(libs.ini4j)
@@ -461,7 +462,7 @@ kotlin {
 
 compose.desktop {
     application {
-        mainClass = "fr.husi.DesktopMainKt"
+        mainClass = "com.fr.husi.DesktopMainKt"
         nativeDistributions {
             if (desktopTargetFormats.isNotEmpty()) {
                 targetFormats(*desktopTargetFormats.toTypedArray())
@@ -482,7 +483,7 @@ compose.desktop {
 }
 
 compose.resources {
-    packageOfResClass = "fr.husi.resources"
+    packageOfResClass = "com.fr.husi.resources"
 }
 
 val commonAboutLibrariesDir = layout.projectDirectory.dir("src/commonMain/aboutlibraries")

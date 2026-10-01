@@ -1,0 +1,57 @@
+package com.fr.husi.database
+
+import com.fr.husi.GroupType
+import com.fr.husi.bg.SubscriptionUpdater
+import com.fr.husi.ktx.applyDefaultValues
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withContext
+
+object GroupManager {
+
+    suspend fun clearGroup(groupId: Long) {
+        DataStore.selectedProxy.set(0L)
+        SagerDatabase.proxyDao.deleteAll(groupId)
+    }
+
+    suspend fun rearrange(groupId: Long) {
+        val entities = withContext(Dispatchers.IO) {
+            SagerDatabase.proxyDao.getByGroup(groupId).first()
+        }
+        for (index in entities.indices) {
+            entities[index].userOrder = (index + 1).toLong()
+        }
+        withContext(Dispatchers.IO) {
+            SagerDatabase.proxyDao.updateProxy(entities)
+        }
+    }
+
+    suspend fun createGroup(group: ProxyGroup): ProxyGroup {
+        group.userOrder = SagerDatabase.groupDao.nextOrder() ?: 1
+        group.id = SagerDatabase.groupDao.createGroup(group.applyDefaultValues())
+        if (group.type == GroupType.SUBSCRIPTION) {
+            SubscriptionUpdater.reconfigureUpdater()
+        }
+        return group
+    }
+
+    suspend fun updateGroup(group: ProxyGroup) {
+        SagerDatabase.groupDao.updateGroup(group)
+        if (group.type == GroupType.SUBSCRIPTION) {
+            SubscriptionUpdater.reconfigureUpdater()
+        }
+    }
+
+    suspend fun deleteGroup(groupId: Long) {
+        SagerDatabase.groupDao.deleteById(groupId)
+        SagerDatabase.proxyDao.deleteByGroup(groupId)
+        SubscriptionUpdater.reconfigureUpdater()
+    }
+
+    suspend fun deleteGroup(group: List<Long>) {
+        SagerDatabase.groupDao.deleteByIds(group)
+        SagerDatabase.proxyDao.deleteByGroup(group.toLongArray())
+        SubscriptionUpdater.reconfigureUpdater()
+    }
+
+}

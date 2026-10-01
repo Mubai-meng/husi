@@ -1,0 +1,55 @@
+package com.fr.husi.fmt.shadowtls
+
+import com.fr.husi.fmt.SingBoxOptions
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertNotNull
+import kotlinx.coroutines.test.runTest
+
+class ShadowTLSFmtTest {
+
+    @Test
+    fun `buildSingBoxOutboundShadowTLSBean should map type server port version and password`() = runTest {
+        val bean = ShadowTLSBean().apply {
+            serverAddress = "example.com"
+            serverPort = 443
+            protocolVersion = 3
+            password = "secret"
+            security = "tls"
+        }
+
+        val outbound = buildSingBoxOutboundShadowTLSBean(bean)
+
+        assertEquals(SingBoxOptions.TYPE_SHADOWTLS, outbound.type)
+        assertEquals("example.com", outbound.server)
+        assertEquals(443, outbound.server_port)
+        assertEquals(3, outbound.version)
+        assertEquals("secret", outbound.password)
+    }
+
+    @Test
+    fun `buildSingBoxOutboundShadowTLSBean should include tls options when security is tls`() = runTest {
+        val bean = ShadowTLSBean().apply {
+            serverAddress = "example.com"
+            serverPort = 443
+            protocolVersion = 3
+            password = "secret"
+            security = "tls"
+            sni = "sni.example.com"
+            allowInsecure = true
+            utlsFingerprint = SingBoxOptions.FINGERPRINT_CHROME
+            certificateSha256 = "pin-a\npin-b"
+        }
+
+        val outbound = buildSingBoxOutboundShadowTLSBean(bean)
+
+        val tls = assertNotNull(outbound.tls)
+        assertEquals(true, tls.enabled)
+        assertEquals("sni.example.com", tls.server_name)
+        assertEquals(true, tls.insecure)
+        assertEquals(listOf("pin-a", "pin-b"), tls.certificate_sha256?.toList())
+        assertEquals("pin-a\npin-b", bean.clone().certificateSha256)
+        val utls = assertNotNull(tls.utls)
+        assertEquals(SingBoxOptions.FINGERPRINT_CHROME, utls.fingerprint)
+    }
+}

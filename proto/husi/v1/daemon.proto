@@ -7,7 +7,7 @@ import "daemon/started_service.proto";
 option go_package = "libcore/pb/husi/v1;husiv1";
 option java_multiple_files = true;
 option java_outer_classname = "DaemonProto";
-option java_package = "fr.husi.proto.v1";
+option java_package = "com.fr.husi.proto.v1";
 
 // DaemonService owns the lifecycle of the instance that daemon.StartedService
 // exposes. Only the desktop hostings serve it: the privileged daemon and the

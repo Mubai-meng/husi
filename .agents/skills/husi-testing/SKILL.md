@@ -29,12 +29,12 @@ The answers determine the base class and the boilerplate. Don't roll your own.
 | Coroutines         | `kotlinx-coroutines-test` (`runTest`, `StandardTestDispatcher`)   |
 | Mocking            | `mockk` exists but is **avoided** — prefer fakes (see below)      |
 | Run all tests      | `make test_gradle` (= `./gradlew :composeApp:allTests`)           |
-| Run one class      | `./gradlew :composeApp:desktopTest --tests fr.husi.foo.BarTest`   |
+| Run one class      | `./gradlew :composeApp:desktopTest --tests com.fr.husi.foo.BarTest`   |
 | Test reports       | `composeApp/build/test-results/desktopTest/TEST-*.xml`            |
 
 Test files mirror the package of the file under test:
-`fr.husi.ui.tools.SpeedTestScreenViewModel` →
-`commonTest/kotlin/fr/husi/ui/tools/SpeedTestScreenViewModelTest.kt`.
+`com.fr.husi.ui.tools.SpeedTestScreenViewModel` →
+`commonTest/kotlin/com/fr/husi/ui/tools/SpeedTestScreenViewModelTest.kt`.
 
 Function names use backticked sentences describing the behaviour, e.g.
 `` `setServer with blank value sets urlError` ``. Match the existing style — see
@@ -42,7 +42,7 @@ Function names use backticked sentences describing the behaviour, e.g.
 
 ## Base class cheat sheet
 
-All base classes live in `composeApp/src/commonTest/kotlin/fr/husi/test/`.
+All base classes live in `composeApp/src/commonTest/kotlin/com/fr/husi/test/`.
 
 | Base class                   | Sets up                                                                                                | Use when…                                                                          |
 |------------------------------|--------------------------------------------------------------------------------------------------------|------------------------------------------------------------------------------------|
@@ -68,7 +68,7 @@ The codebase uses `Fake*` classes that implement the production interfaces (`Fak
 - never require `mockkStatic` against gobind classes, which is fragile on the desktop JVM.
 
 If you find yourself reaching for `mockk`, first check whether a fake already exists, or whether
-the right move is to extract an interface and add a fake to `commonTest/kotlin/fr/husi/test/`. Treat
+the right move is to extract an interface and add a fake to `commonTest/kotlin/com/fr/husi/test/`. Treat
 each new fake as infrastructure for *future* tests, not just the one you're writing.
 
 ## Refactoring for testability
@@ -76,7 +76,7 @@ each new fake as infrastructure for *future* tests, not just the one you're writ
 When the code you want to test calls a global static (`Libcore.xxx`) or an internal Kotlin object
 (`DataStore`), introduce a DI seam instead of working around it in the test:
 
-1. **Interface in `commonMain`** (e.g. `fr.husi.libcore.HttpClientFactory`) wrapping the static.
+1. **Interface in `commonMain`** (e.g. `com.fr.husi.libcore.HttpClientFactory`) wrapping the static.
 2. **Default object impl** (e.g. `LibcoreHttpClientFactory`) that just delegates.
 3. **Koin binding** in `commonUiModule()` (or a new module if domain-specific).
 4. **Constructor injection on the consumer**, with the Koin singleton as the default.
@@ -188,7 +188,7 @@ class BarUpdaterTest : HusiHttpKoinTest() {
 - `lastClient.socks5` / `lastRequest.headers` / `lastRequest.contentZero` / `lastResponse.closed`
   for assertions on what the production code configured.
 
-Source: `composeApp/src/commonTest/kotlin/fr/husi/test/FakeHttpClientFactory.kt`.
+Source: `composeApp/src/commonTest/kotlin/com/fr/husi/test/FakeHttpClientFactory.kt`.
 
 ## DataStore in tests
 
@@ -243,7 +243,7 @@ Guidelines:
   on it:
 
   ```
-  ./gradlew :composeApp:desktopTest --tests fr.husi.fmt.ConfigBuilderTest 2>&1 | grep -E 'FAILED$'
+  ./gradlew :composeApp:desktopTest --tests com.fr.husi.fmt.ConfigBuilderTest 2>&1 | grep -E 'FAILED$'
   ```
 
 For non-preference fields (e.g. `DataStore.serviceState`, which is `@Volatile var serviceState`),
@@ -268,7 +268,7 @@ restore them yourself in `@AfterTest`.
   recomposer sends one every frame; a unit test has no Compose runtime, so it must send its own:
   `Snapshot.sendApplyNotifications()` (from `androidx.compose.runtime.snapshots`) after the write
   and before `advanceUntilIdle()`. See
-  `commonTest/kotlin/fr/husi/ui/dashboard/DashboardViewModelConnectionListTest.kt`.
+  `commonTest/kotlin/com/fr/husi/ui/dashboard/DashboardViewModelConnectionListTest.kt`.
 - **`DataStore` access throws `IllegalStateException: KoinApplicationException`.** You extended
   `MainDispatcherTest` instead of `HusiKoinMainDispatcherTest`. `DataStore.configurationStore`'s
   factory calls `resolveRepository()` which needs Koin.
@@ -293,27 +293,27 @@ restore them yourself in `@AfterTest`.
 
 ## Reference implementations
 
-- ViewModel + flows + Koin: `commonTest/kotlin/fr/husi/ui/MainViewModelTest.kt`
-- ViewModel without Koin (pure state): `commonTest/kotlin/fr/husi/ui/profile/HttpSettingsViewModelTest.kt`
+- ViewModel + flows + Koin: `commonTest/kotlin/com/fr/husi/ui/MainViewModelTest.kt`
+- ViewModel without Koin (pure state): `commonTest/kotlin/com/fr/husi/ui/profile/HttpSettingsViewModelTest.kt`
 - StateFlow `isDirty` collector pattern:
-  `commonTest/kotlin/fr/husi/ui/profile/ProfileEditorViewModelTest.kt`
-- Pure logic, no base class: `commonTest/kotlin/fr/husi/fmt/v2ray/V2RayFmtTest.kt`,
-  `commonTest/kotlin/fr/husi/ktx/MapsKtTest.kt`
+  `commonTest/kotlin/com/fr/husi/ui/profile/ProfileEditorViewModelTest.kt`
+- Pure logic, no base class: `commonTest/kotlin/com/fr/husi/fmt/v2ray/V2RayFmtTest.kt`,
+  `commonTest/kotlin/com/fr/husi/ktx/MapsKtTest.kt`
 - HTTP-touching code with fakes:
-  `commonTest/kotlin/fr/husi/bg/AppUpdateDownloadTest.kt`
-- Background scheduling: `commonTest/kotlin/fr/husi/bg/SubscriptionAutoUpdateTest.kt`,
+  `commonTest/kotlin/com/fr/husi/bg/AppUpdateDownloadTest.kt`
+- Background scheduling: `commonTest/kotlin/com/fr/husi/bg/SubscriptionAutoUpdateTest.kt`,
   `RouteAssetAutoUpdateTest.kt`
 
 ## Source layout reminders
 
-- Production seam: `composeApp/src/commonMain/kotlin/fr/husi/libcore/HttpClientFactory.kt`
-- Fakes: `composeApp/src/commonTest/kotlin/fr/husi/test/FakeHttpClientFactory.kt`
+- Production seam: `composeApp/src/commonMain/kotlin/com/fr/husi/libcore/HttpClientFactory.kt`
+- Fakes: `composeApp/src/commonTest/kotlin/com/fr/husi/test/FakeHttpClientFactory.kt`
 - Base classes:
-    - `commonTest/kotlin/fr/husi/test/MainDispatcherTest.kt`
-    - `commonTest/kotlin/fr/husi/test/HusiKoinTest.kt`
-    - `commonTest/kotlin/fr/husi/test/HusiKoinMainDispatcherTest.kt`
-    - `commonTest/kotlin/fr/husi/test/HusiHttpKoinTest.kt`
+    - `commonTest/kotlin/com/fr/husi/test/MainDispatcherTest.kt`
+    - `commonTest/kotlin/com/fr/husi/test/HusiKoinTest.kt`
+    - `commonTest/kotlin/com/fr/husi/test/HusiKoinMainDispatcherTest.kt`
+    - `commonTest/kotlin/com/fr/husi/test/HusiHttpKoinTest.kt`
 - Koin module registering production singletons:
-  `composeApp/src/commonMain/kotlin/fr/husi/di/Koin.kt`
-- ViewModel registry: `composeApp/src/commonMain/kotlin/fr/husi/di/Navigation.kt`
+  `composeApp/src/commonMain/kotlin/com/fr/husi/di/Koin.kt`
+- ViewModel registry: `composeApp/src/commonMain/kotlin/com/fr/husi/di/Navigation.kt`
   (`viewModelOf(::FooViewModel)` inside `scope<MainScreenScope> { ... }`)

@@ -11,7 +11,7 @@ import (
 
 const (
 	serviceKind     = "service"
-	javaPackageName = "fr.husi.proto.daemon"
+	javaPackageName = "com.fr.husi.proto.daemon"
 	lineSeparator   = "\n"
 )
 

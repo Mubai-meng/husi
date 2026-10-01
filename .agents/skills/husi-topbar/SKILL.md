@@ -6,7 +6,7 @@ description: Husi project's topbar design system. Use whenever adding a new scre
 # Husi Topbar Design
 
 Husi replaces Material 3's default `TopAppBar` / `AppBarWithSearch` with a set of in-house "capsule"
-components. All of them live in `composeApp/src/commonMain/kotlin/fr/husi/compose/Capsule.kt`.
+components. All of them live in `composeApp/src/commonMain/kotlin/com/fr/husi/compose/Capsule.kt`.
 Background blur comes from [Haze](https://github.com/chrisbanes/haze) 2.x (`haze`, `haze-blur`,
 `haze-blur-material3`).
 
@@ -71,7 +71,7 @@ a plain `Column` above the content (`ProfilePickerContent`). Find the current `n
 actions, and inside the pill the slot content is wrapped in `Modifier.basicMarquee()`. When the
 content's intrinsic width exceeds the pill's bounded width, a 16dp horizontal edge feather is added
 on each side via the shared `Modifier.fadingEdge(...)` from
-`composeApp/src/commonMain/kotlin/fr/husi/compose/Fading.kt`. Short titles render at intrinsic
+`composeApp/src/commonMain/kotlin/com/fr/husi/compose/Fading.kt`. Short titles render at intrinsic
 width with no marquee and no fade; actions stay right-pinned in both cases.
 
 The title pill itself provides a bounded ripple via the internal `PillCapsule` surface, even though
@@ -410,16 +410,16 @@ What does your topBar look like?
 
 ## Reference implementations
 
-- Pattern A: `composeApp/src/commonMain/kotlin/fr/husi/ui/RouteScreen.kt`, `GroupScreen.kt`,
+- Pattern A: `composeApp/src/commonMain/kotlin/com/fr/husi/ui/RouteScreen.kt`, `GroupScreen.kt`,
   `LogcatScreen.kt`
 - Pattern A with a private content composable taking `modifier`:
-  `composeApp/src/commonMain/kotlin/fr/husi/ui/RouteSettingsScreen.kt`
+  `composeApp/src/commonMain/kotlin/com/fr/husi/ui/RouteSettingsScreen.kt`
 - Pattern A with `hazeState = null` (Modifier-padded content):
-  `composeApp/src/commonMain/kotlin/fr/husi/ui/tools/StunScreen.kt`
+  `composeApp/src/commonMain/kotlin/com/fr/husi/ui/tools/StunScreen.kt`
 - Pattern B (tabs + conditional search + inner inset Column):
-  `composeApp/src/commonMain/kotlin/fr/husi/ui/dashboard/Dashboard.kt`
+  `composeApp/src/commonMain/kotlin/com/fr/husi/ui/dashboard/Dashboard.kt`
 - Pattern B (search + tabs):
-  `composeApp/src/commonMain/kotlin/fr/husi/ui/configuration/ConfigurationScreen.kt`
+  `composeApp/src/commonMain/kotlin/com/fr/husi/ui/configuration/ConfigurationScreen.kt`
 - Pattern B (Material 3 SearchBar special case):
-  `composeApp/src/androidMain/kotlin/fr/husi/ui/AbstractAppList.kt`
-- Component source: `composeApp/src/commonMain/kotlin/fr/husi/compose/Capsule.kt`
+  `composeApp/src/androidMain/kotlin/com/fr/husi/ui/AbstractAppList.kt`
+- Component source: `composeApp/src/commonMain/kotlin/com/fr/husi/compose/Capsule.kt`
