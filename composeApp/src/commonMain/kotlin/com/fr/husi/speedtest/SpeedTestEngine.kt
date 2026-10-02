@@ -47,7 +47,10 @@ object SpeedTestEngine {
     /** 单节点测速参数（与 libcore SpeedTestParams 一一对应）。 */
     class Params(
         val outboundTag: String = "",
-        val maxConnections: Int = 3,
+        // 6 连接: 高带宽×高 RTT(经代理跨境)链路单/少连接受 TCP 窗口限制明显,
+        // Ookla 官方客户端也是多流并发; 6 流已足够填满绝大多数链路且不易
+        // 触发服务器限流。
+        val maxConnections: Int = 6,
         val downloadSeconds: Int = 10,
         val uploadSeconds: Int = 10,
         val measureUpload: Boolean = false,

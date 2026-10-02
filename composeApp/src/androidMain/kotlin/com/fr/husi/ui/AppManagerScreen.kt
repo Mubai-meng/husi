@@ -87,6 +87,29 @@ internal actual fun AppManagerScreen(
                 },
             )
             DropdownMenuItem(
+                text = { Text(stringResource(Res.string.show_system_apps)) },
+                onClick = {
+                    viewModel.setShowSystemApps(!uiState.showSystemApps)
+                    onDismiss()
+                },
+                leadingIcon = {
+                    Icon(
+                        imageVector = vectorResource(Res.drawable.android),
+                        contentDescription = null,
+                    )
+                },
+                trailingIcon = if (uiState.showSystemApps) {
+                    {
+                        Icon(
+                            imageVector = vectorResource(Res.drawable.check),
+                            contentDescription = null,
+                        )
+                    }
+                } else {
+                    null
+                },
+            )
+            DropdownMenuItem(
                 text = { Text(stringResource(Res.string.invert_selections)) },
                 onClick = {
                     viewModel.invertSections()

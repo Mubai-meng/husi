@@ -1,5 +1,7 @@
 package com.fr.husi.ui
 
+import android.content.pm.ApplicationInfo
+import android.content.pm.PackageInfo
 import android.content.pm.PackageManager
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.Stable
@@ -19,6 +21,7 @@ import kotlinx.coroutines.launch
 internal data class AppManagerUiState(
     val mode: ProxyMode = ProxyMode.DISABLED,
     val isLoading: Boolean = false,
+    val showSystemApps: Boolean = false,
     val apps: List<ProxiedApp> = emptyList(), // sorted, full
     val filteredApps: List<ProxiedApp> = emptyList(), // sorted, filtered by search
     val scanned: List<String>? = null,
@@ -49,6 +52,10 @@ internal class AppManagerViewModel(
         field = MutableSharedFlow<AppManagerUiEvent>()
 
     private var scanJob: Job? = null
+
+    /** 只在单线程上下文读写的展示开关, 与 uiState.showSystemApps 同步。 */
+    @Volatile
+    private var showSystemApps = false
 
     init {
         if (!DataStore.proxyApps.getBlocking()) {
@@ -83,6 +90,24 @@ internal class AppManagerViewModel(
         uiState.update { it.copy(isLoading = isLoading, apps = apps, filteredApps = filteredApps) }
     }
 
+    /** 默认隐藏系统应用(FLAG_SYSTEM), 打开"显示系统应用"后不再过滤。 */
+    override fun filterCachedApps(
+        cachedApps: Map<String, PackageInfo>,
+    ): Map<String, PackageInfo> {
+        if (showSystemApps) return cachedApps
+        return cachedApps.filterValues { info ->
+            info.applicationInfo?.let { it.flags and ApplicationInfo.FLAG_SYSTEM == 0 } ?: true
+        }
+    }
+
+    fun setShowSystemApps(show: Boolean) {
+        showSystemApps = show
+        uiState.update { it.copy(showSystemApps = show) }
+        viewModelScope.launch(singleThreadContext) {
+            reload()
+        }
+    }
+
     override fun updateSnackbar(message: StringOrRes?) {
         uiState.update { it.copy(snackbarMessage = message) }
     }
@@ -104,7 +129,8 @@ internal class AppManagerViewModel(
 
     fun scanChinaApps() {
         scanJob = viewModelScope.launch(singleThreadContext) {
-            val cachedApps = cachedApps
+            // 与列表展示一致: 隐藏系统应用时扫描也跳过它们。
+            val cachedApps = filterCachedApps(this@AppManagerViewModel.cachedApps)
             val bypass = DataStore.bypassMode.get()
             uiState.update {
                 it.copy(

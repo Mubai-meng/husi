@@ -33,14 +33,17 @@ const (
 	// downloadFileName speedtest.net 服务器提供的最大档位测试文件,
 	// 单请求约 16MB; 请求期间被到时中止时已收字节照常计数。
 	downloadFileName = "random4000x4000.jpg"
-	// uploadChunkSize 单次上传请求的 payload 大小(4MB)。
-	uploadChunkSize = 4 << 20
+	// uploadChunkSize 单次上传请求的 payload 大小(8MB): 大块减少
+	// 请求往返占比, 高吞吐链路尤其明显。
+	uploadChunkSize = 8 << 20
 	// measureWarmup 最终速率跳过的预热时长(TCP 慢启动/连接建立)。
 	measureWarmup = time.Second
 	// progressInterval 进度采样与事件上报间隔。
 	progressInterval = 250 * time.Millisecond
-	// readBufferSize 下载读取缓冲。
-	readBufferSize = 64 << 10
+	// readBufferSize 下载读取缓冲(256KB): 高吞吐(如 500Mbps≈60MB/s)
+	// 时 64KB 缓冲意味着每连接每秒上千次 Read 系统调用, 256KB 显著
+	// 降低用户态/内核态切换开销。
+	readBufferSize = 256 << 10
 	// maxConsecutiveErrors 单 worker 连续请求失败上限(超过即退出该 worker)。
 	maxConsecutiveErrors = 5
 )

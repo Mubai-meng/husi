@@ -119,6 +119,7 @@
     <string name="action_create_group">空白组</string>
     <string name="action_from_link">添加订阅</string>
     <string name="action_scan_china_apps">扫描中国应用</string>
+    <string name="show_system_apps">显示系统应用</string>
     <string name="action_export_file">导出到文件</string>
     <string name="action_export_clipboard">导出到剪切板</string>
     <string name="action_import">从剪切板导入</string>

@@ -7,6 +7,7 @@ import com.charleskorn.kaml.YamlNull
 import com.charleskorn.kaml.YamlNode
 import com.charleskorn.kaml.YamlScalar
 import com.fr.husi.fmt.AbstractBean
+import com.fr.husi.fmt.hysteria.HysteriaBean
 import com.fr.husi.fmt.shadowsocks.ShadowsocksBean
 import com.fr.husi.fmt.trojan.TrojanBean
 import com.fr.husi.ktx.Logs
@@ -19,8 +20,9 @@ import com.fr.husi.ktx.isIpAddress
  * 与 Husi 的分组模型不兼容，导入时忽略。
  *
  * 支持的节点类型：
- * - trojan: name/server/port/password/sni/skip-cert-verify/udp
- * - ss:     name/server/port/cipher/password/plugin(obfs 及 plugin-opts)
+ * - trojan:    name/server/port/password/sni/skip-cert-verify/udp
+ * - ss:        name/server/port/cipher/password/plugin(obfs 及 plugin-opts)
+ * - hysteria2: name/server/port(/ports 端口跳跃)/password/sni/obfs/obfs-password/skip-cert-verify
  * 其余类型记录日志后跳过，不中断整批导入。
  */
 internal object ClashImporter {
@@ -45,6 +47,7 @@ internal object ClashImporter {
                 when (type) {
                     "trojan" -> beans.add(parseTrojan(map))
                     "ss" -> beans.add(parseShadowsocks(map))
+                    "hysteria2" -> beans.add(parseHysteria2(map))
                     else -> Logs.w("$TAG: unsupported proxy type \"$type\", skipped")
                 }
             } catch (e: Exception) {
@@ -79,6 +82,30 @@ internal object ClashImporter {
         bean.password = map.str("password") ?: ""
         bean.name = map.str("name") ?: ""
         parsePlugin(map)?.let { bean.plugin = it }
+        bean.initializeDefaultValues()
+        return bean
+    }
+
+    /**
+     * Clash hysteria2 → HysteriaBean(PROTOCOL_VERSION_2)。
+     * `ports`（端口跳跃，如 "1000-2000" 或逗号组合）优先于单值 `port`。
+     */
+    private fun parseHysteria2(map: YamlMap): HysteriaBean {
+        val bean = HysteriaBean()
+        bean.protocolVersion = HysteriaBean.PROTOCOL_VERSION_2
+        bean.serverAddress = map.str("server") ?: error("hysteria2 proxy missing server")
+        bean.serverPorts = map.str("ports")
+            ?: map.int("port")?.toString()
+            ?: error("hysteria2 proxy missing port")
+        bean.authPayload = map.str("password") ?: ""
+        bean.name = map.str("name") ?: ""
+        bean.sni = map.str("sni") ?: ""
+        bean.obfsType = map.str("obfs") ?: ""
+        bean.obfsPassword = map.str("obfs-password") ?: ""
+        bean.allowInsecure = map.bool("skip-cert-verify") ?: false
+        if (bean.sni.isBlank() && !bean.serverAddress.isIpAddress()) {
+            bean.sni = bean.serverAddress
+        }
         bean.initializeDefaultValues()
         return bean
     }

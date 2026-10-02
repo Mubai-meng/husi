@@ -22,6 +22,7 @@ import com.fr.husi.ktx.isIpAddress
 import com.fr.husi.ktx.kxs
 import com.fr.husi.ktx.parseProxies
 import com.fr.husi.ktx.toJsonMapKxs
+import com.fr.husi.libcore.NO_OVERALL_TIMEOUT_MS
 import com.fr.husi.libcore.resolveHttpClientFactory
 import com.fr.husi.repository.resolveRepository
 import com.fr.husi.resources.Res
@@ -61,6 +62,12 @@ object RawUpdater : GroupUpdater() {
             }.newRequest().apply {
                 setURL(subscription.link)
                 setUserAgent(generateUserAgent(subscription.customUserAgent))
+                // Subscription content can be large and the server can be slow; the
+                // default overall deadline (TCPTimeout) kills the body read midway.
+                // Same treatment as rule set / app update downloads: no overall
+                // deadline, connection setup still times out, stall reader still
+                // fails stalled transfers.
+                setTimeout(NO_OVERALL_TIMEOUT_MS)
             }.execute()
             contentText = response.contentString
             userInfo = response.getHeader("Subscription-Userinfo")

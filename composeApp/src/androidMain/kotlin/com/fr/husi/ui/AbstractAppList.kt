@@ -123,6 +123,14 @@ internal abstract class BaseAppListViewModel : ViewModel() {
         }
     }
 
+    /**
+     * 列表展示前的包过滤钩子(选择/导入/导出仍基于完整 cachedApps, 不受影响)。
+     * 默认原样返回; 子类可覆盖(如"显示系统应用"开关)。
+     */
+    protected open fun filterCachedApps(
+        cachedApps: Map<String, PackageInfo>,
+    ): Map<String, PackageInfo> = cachedApps
+
     private val iconCache = mutableMapOf<String, Drawable>()
     private fun loadIcon(packageInfo: PackageInfo): Drawable {
         return iconCache.getOrPut(packageInfo.packageName) {
@@ -152,7 +160,7 @@ internal abstract class BaseAppListViewModel : ViewModel() {
 
     suspend fun reload(cachedApps: Map<String, PackageInfo> = this.cachedApps) {
         val allApps = mutableListOf<ProxiedApp>()
-        for ((packageName, packageInfo) in cachedApps) {
+        for ((packageName, packageInfo) in filterCachedApps(cachedApps)) {
             currentCoroutineContext()[Job]!!.ensureActive()
 
             val applicationInfo = packageInfo.applicationInfo!!
