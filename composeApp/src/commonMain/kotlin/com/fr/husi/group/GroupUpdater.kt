@@ -287,6 +287,12 @@ abstract class GroupUpdater {
         }
 
         subscription.lastUpdated = (System.currentTimeMillis() / 1000).toInt()
+        // ⚠️ 排序持久化守护：proxyGroup 是更新开始时加载的旧对象，更新
+        // 期间（下载可能耗时数十秒）用户可能改了排序方式（group.order），
+        // 直接回写会把用户的排序选择冲掉（表现为"排序不持久化"）。
+        // 回写前以 DB 最新 order 为准。
+        proxyGroup.order = SagerDatabase.groupDao.getById(proxyGroup.id).first()
+            ?.order ?: proxyGroup.order
         SagerDatabase.groupDao.updateGroup(proxyGroup)
 
         return GroupUpdateResult.Success(

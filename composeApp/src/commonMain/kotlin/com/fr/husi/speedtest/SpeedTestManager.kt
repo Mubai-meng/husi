@@ -22,13 +22,9 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.flatMapMerge
-import kotlinx.coroutines.flow.flow
-import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -46,10 +42,10 @@ import java.io.File
  * 安卓 sing-box 频繁并发切换出站极易 panic 崩溃。
  *   1. 本调度器只通过 [SpeedTestEngine] 创建独立一次性实例，
  *      绝不触碰正在运行的 sing-box 服务实例，绝不做运行实例出站切换；
- *   2. 并发硬上限 2（SpeedTestSettings.concurrent 钳制），Go 侧另有
- *      4 会话兜底；
+ *   2. 批量严格顺序执行（从第一个节点按列表顺序逐个测，用户要求；
+ *      顺带彻底消除并发出站切换），单节点入口队列长度 1；
  *   3. 绝不在服务 reload / 订阅更新过程中发起批量测速；
- *   4. 单个会话失败只跳过该节点，不影响队列其余任务。
+ *   4. 单个会话失败/超时只跳过该节点，不影响队列其余任务。
  */
 object SpeedTestManager {
 
@@ -64,6 +60,17 @@ object SpeedTestManager {
 
     /** 单次守护进程状态查询的上限（VPN 未运行时连接会悬挂，必须限时）。 */
     private const val SERVICE_STATE_SYNC_TIMEOUT_MS = 3_000L
+
+    /**
+     * 批量测速单节点硬超时：到点自动切下一个节点（用户要求 5 秒）。
+     * 单节点入口（节点卡片"测速此节点"）不套此上限，按设置跑满时长。
+     */
+    const val NODE_TIMEOUT_MS = 5_000L
+
+    /** 超时切下一个节点前的缓冲：speedTestStop 在 IO 线程异步执行
+     * （最长阻塞 35s 等实例关闭），Go 侧并发会话上限 4，稍等片刻
+     * 避免连续超时时旧实例堆积挤占会话配额。 */
+    private const val NODE_TIMEOUT_COOLDOWN_MS = 500L
 
     /** UI 状态（对齐延迟测试的 ConfigurationTestUiState 语义，但独立持有）。 */
     data class UiState(
@@ -102,23 +109,40 @@ object SpeedTestManager {
      * 批量测速一个分组。已有任务运行中则忽略（返回 false）。
      * 结果逐条写入 [SpeedTestDatabase]；失败自动删除可选
      * （SpeedTestSettings.autoRemove，对齐 Karing testLatencyAutoRemove）。
+     *
+     * @param perNodeTimeoutMs 单节点硬超时；null = 不限时（单节点入口用）。
+     *   超时的节点记为错误结果并自动切下一个。
      */
-    fun startGroup(groupId: Long, profiles: List<ProxyEntityParams>): Boolean {
+    fun startGroup(
+        groupId: Long,
+        profiles: List<ProxyEntityParams>,
+        perNodeTimeoutMs: Long? = NODE_TIMEOUT_MS,
+    ): Boolean {
         if (profiles.isEmpty()) return false
         // 非挂起入口：tryLock 抢占，避免阻塞 UI 线程。
         if (!mutex.tryLock()) return false
         try {
-            if (job?.isActive == true) return false
-            job = scope.launch { runBatch(groupId, profiles) }
+            val current = job
+            if (current?.isActive == true) {
+                // 一致性守护：running/message 均已复位但 job 仍挂着
+                // （收尾阶段卡住等）→ 强制让位，避免"点测速没反应，
+                // 必须重启应用才能恢复"（2026-10 用户实测反馈）。
+                // running=true 或停止服务期间（message 非空）= 正常占用，
+                // 维持原拒绝语义。
+                val state = _uiState.value
+                if (state.running || state.message != null) return false
+                current.cancel()
+            }
+            job = scope.launch { runBatch(groupId, profiles, perNodeTimeoutMs) }
         } finally {
             mutex.unlock()
         }
         return true
     }
 
-    /** 单节点测速（节点卡片菜单入口），同样走批量管道（队列长度=1）。 */
+    /** 单节点测速（节点卡片菜单入口），同样走批量管道（队列长度=1，不限时）。 */
     fun startSingle(groupId: Long, profile: ProxyEntityParams): Boolean =
-        startGroup(groupId, listOf(profile))
+        startGroup(groupId, listOf(profile), perNodeTimeoutMs = null)
 
     /** 停止当前批量任务（幂等）。已完成的单条结果保留。 */
     fun cancel() {
@@ -157,85 +181,105 @@ object SpeedTestManager {
         val groupId: Long,
     )
 
-    private suspend fun runBatch(groupId: Long, profiles: List<ProxyEntityParams>) {
+    private suspend fun runBatch(
+        groupId: Long,
+        profiles: List<ProxyEntityParams>,
+        perNodeTimeoutMs: Long?,
+    ) {
         val settings = SpeedTestSettings.snapshot()
         _uiState.update { UiState(running = true, total = profiles.size) }
 
-        // 可靠测速路径需要 :bg 进程的 protect 通道（服务运行中 → bridge）；
-        // 未启动服务时本地实例直连节点，在运营商网络下大多被拒绝。
-        // 用户要求：测速前自动启动服务，测完自动恢复原状态。
-        //
-        // ⚠️ 路由正确性前提：DataStore.serviceState 决定引擎的 bridge/local
-        // 选择，而它是事件镜像（WhileSubscribed 5s 停更）的离线副本，可能
-        // 严重过期 —— 过期会导致"VPN 实际在跑却误走本地 JNI（无 protect）"，
-        // 测速出站被本机 TUN 全量劫持：测速变成双重代理、流量全部计入
-        // 被测节点统计（2026-10-01 三轮日志实测）。因此每次批量前先向
-        // :bg 守护进程做一次性状态同步（订阅即重放 lastState），之后的
-        // 轮询也直接问守护进程，不再信任本地镜像。
-        val synced = refreshServiceState()
-        if (synced != null) {
-            DataStore.serviceState = synced.state
-        } else {
-            // 守护进程不可达（带超时确认）→ :bg 进程不在 → VPN 服务物理上
-            // 必然未运行 → 过期的"已启动"镜像不可信，强制纠正为 Idle，
-            // 否则引擎会误走 bridge 并悬挂/失败。
-            DataStore.serviceState = ServiceState.Idle
-        }
-
         var autoStarted = false
-        if (!DataStore.serviceState.started) {
-            _uiState.update { it.copy(message = "正在启动网络隧道…") }
-            runCatching { resolveRepository().startService() }
-                .onSuccess { autoStarted = true }
-                .onFailure { e ->
-                    _uiState.update {
-                        it.copy(message = "服务启动失败: " + e.readableMessage)
+        val results = mutableListOf<SpeedTestEntity>()
+        // ⚠️ 整个批次（含服务启动段）必须在 try/finally 内：running=true
+        // 一旦置位，任何退出路径（取消、异常、提前 return）都必须复位，
+        // 否则 UI 永远显示"测速进行中"，后续所有测速入口全部无响应，
+        // 只能重启应用（2026-10 用户实测反馈的根因）。
+        try {
+            // 可靠测速路径需要 :bg 进程的 protect 通道（服务运行中 → bridge）；
+            // 未启动服务时本地实例直连节点，在运营商网络下大多被拒绝。
+            // 用户要求：测速前自动启动服务，测完自动恢复原状态。
+            //
+            // ⚠️ 路由正确性前提：DataStore.serviceState 决定引擎的 bridge/local
+            // 选择，而它是事件镜像（WhileSubscribed 5s 停更）的离线副本，可能
+            // 严重过期 —— 过期会导致"VPN 实际在跑却误走本地 JNI（无 protect）"，
+            // 测速出站被本机 TUN 全量劫持：测速变成双重代理、流量全部计入
+            // 被测节点统计（2026-10-01 三轮日志实测）。因此每次批量前先向
+            // :bg 守护进程做一次性状态同步（订阅即重放 lastState），之后的
+            // 轮询也直接问守护进程，不再信任本地镜像。
+            val synced = refreshServiceState()
+            if (synced != null) {
+                DataStore.serviceState = synced.state
+            } else {
+                // 守护进程不可达（带超时确认）→ :bg 进程不在 → VPN 服务物理上
+                // 必然未运行 → 过期的"已启动"镜像不可信，强制纠正为 Idle，
+                // 否则引擎会误走 bridge 并悬挂/失败。
+                DataStore.serviceState = ServiceState.Idle
+            }
+
+            if (!DataStore.serviceState.started) {
+                _uiState.update { it.copy(message = "正在启动网络隧道…") }
+                runCatching { resolveRepository().startService() }
+                    .onSuccess { autoStarted = true }
+                    .onFailure { e ->
+                        _uiState.update {
+                            it.copy(message = "服务启动失败: " + e.readableMessage)
+                        }
                     }
-                }
-            if (autoStarted) {
-                if (awaitServiceStarted(timeoutMs = 30_000)) {
-                    _uiState.update { it.copy(message = null) }
-                } else {
-                    // 守护进程确认 30s 仍未 started：TUN 是否存在不可知，
-                    // 此时本地直连可能被 TUN 劫持（双重代理 + 流量误计），
-                    // 宁可取消本次测速，也不能给出污染的结果。
-                    autoStarted = false
-                    _uiState.update {
-                        it.copy(
-                            running = false,
-                            message = "服务启动确认超时，已取消本次测速（可稍后重试）",
-                        )
+                if (autoStarted) {
+                    if (awaitServiceStarted(timeoutMs = 30_000)) {
+                        _uiState.update { it.copy(message = null) }
+                    } else {
+                        // 守护进程确认 30s 仍未 started：TUN 是否存在不可知，
+                        // 此时本地直连可能被 TUN 劫持（双重代理 + 流量误计），
+                        // 宁可取消本次测速，也不能给出污染的结果。
+                        autoStarted = false
+                        _uiState.update {
+                            it.copy(
+                                running = false,
+                                message = "服务启动确认超时，已取消本次测速（可稍后重试）",
+                            )
+                        }
+                        return
                     }
-                    return
                 }
             }
-        }
 
-        val results = mutableListOf<SpeedTestEntity>()
-        try {
-            profiles.asFlow()
-                .flatMapMerge(settings.concurrent) { profile ->
-                    flow {
-                        val entity = withContext(Dispatchers.IO) {
+            // ---- 顺序批量：严格从第一个节点按列表顺序逐个测（用户要求）。
+            // 顺序执行同时天然规避了 sing-box 并发出站切换的 panic 风险
+            // （⚠️ 安卓 sing-box 频繁并发切换出站极易 panic —— 见类注释）。
+            for (profile in profiles) {
+                currentCoroutineContext().ensureActive()
+                val entity = withContext(Dispatchers.IO) {
+                    if (perNodeTimeoutMs == null) {
+                        testProfile(profile, settings)
+                    } else {
+                        withTimeoutOrNull(perNodeTimeoutMs) {
                             testProfile(profile, settings)
-                        }
-                        emit(entity)
+                        } ?: SpeedTestEntity(
+                            proxyId = profile.id,
+                            groupId = profile.groupId,
+                            testedAt = System.currentTimeMillis(),
+                        ).copy(error = "测速超时（单节点 ${perNodeTimeoutMs / 1000} 秒上限）")
                     }
                 }
-                .flowOn(Dispatchers.Default)
-                .collect { entity ->
-                    results.add(entity)
-                    _uiState.update {
-                        it.copy(
-                            processed = it.processed + 1,
-                            liveRates = it.liveRates - entity.proxyId,
-                        )
-                    }
-                    // 每条结果立即落库，中途取消也不丢已完成部分。
-                    SpeedTestDatabase.dao.insert(entity)
-                    // 同步刷新卡片展示缓存（测速结果在延迟前显示）。
-                    _groupResults.update { it + (entity.proxyId to entity) }
+                results.add(entity)
+                _uiState.update {
+                    it.copy(
+                        processed = it.processed + 1,
+                        liveRates = it.liveRates - entity.proxyId,
+                    )
                 }
+                // 每条结果立即落库，中途取消也不丢已完成部分。
+                SpeedTestDatabase.dao.insert(entity)
+                // 同步刷新卡片展示缓存（测速结果在延迟前显示）。
+                _groupResults.update { it + (entity.proxyId to entity) }
+                if (entity.error?.startsWith("测速超时") == true) {
+                    // 超时切下一个节点前给旧实例关闭留缓冲（speedTestStop
+                    // 在 IO 线程异步执行，Go 侧并发会话上限 4）。
+                    delay(NODE_TIMEOUT_COOLDOWN_MS)
+                }
+            }
         } finally {
             // 历史裁剪（按设置保留每节点最近 N 条）。
             runCatching { SpeedTestDatabase.dao.prune(settings.historyKeep) }

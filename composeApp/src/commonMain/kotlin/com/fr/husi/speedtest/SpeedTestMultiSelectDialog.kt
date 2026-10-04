@@ -22,6 +22,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.fr.husi.database.SagerDatabase
 import kotlinx.coroutines.flow.firstOrNull
 
@@ -45,6 +46,10 @@ fun SpeedTestMultiSelectDialog(
         mutableStateOf<List<Pair<Long, String>>?>(null)
     }
     val checked = remember(groupId) { mutableStateOf(setOf<Long>()) }
+    // 响应式收集运行状态：不能直接调 SpeedTestManager.isRunning()（读
+    // StateFlow.value 不建立订阅，状态变化不触发重组 —— 曾导致按钮停留在
+    // "测速进行中…"禁用态，勾选后点开始也没反应，必须重启应用）。
+    val speedState by SpeedTestManager.uiState.collectAsStateWithLifecycle()
 
     LaunchedEffect(groupId) {
         profiles = SagerDatabase.proxyDao.getByGroup(groupId)
@@ -58,7 +63,7 @@ fun SpeedTestMultiSelectDialog(
         onDismissRequest = onDismiss,
         confirmButton = {
             TextButton(
-                enabled = !checked.value.isEmpty() && SpeedTestManager.isRunning().not(),
+                enabled = !checked.value.isEmpty() && !speedState.running,
                 onClick = {
                     val idToGroup = list
                         ?.filter { it.first in checked.value }
@@ -69,7 +74,7 @@ fun SpeedTestMultiSelectDialog(
                 },
             ) {
                 Text(
-                    if (SpeedTestManager.isRunning()) {
+                    if (speedState.running) {
                         "测速进行中…"
                     } else {
                         "开始测速(" + checked.value.size + ")"

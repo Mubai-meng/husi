@@ -239,6 +239,10 @@ fun ConfigurationScreen(
     val selectedGroup by vm.selectedGroup.collectAsStateWithLifecycle(
         DataStore.GROUP_NOPE,
     )
+    // 响应式收集测速运行状态（不能裸调 isRunning()：StateFlow.value
+    // 读取不建立订阅，菜单文案/分支不会随状态变化重组）。
+    val speedUiState by SpeedTestManager.uiState.collectAsStateWithLifecycle()
+    val speedRunning = speedUiState.running
     val pagerState = rememberPagerState(
         initialPage = uiState.groups
             .indexOfFirst { it.id == selectedGroup }
@@ -586,7 +590,7 @@ fun ConfigurationScreen(
                                             },
                                             // ---- 带宽测速（与延迟测试完全独立的任务系统）----
                                             DropdownMenuAction(
-                                                text = if (SpeedTestManager.isRunning()) {
+                                                text = if (speedRunning) {
                                                     "带宽测速（整组，点击停止）"
                                                 } else {
                                                     "带宽测速（整组）"
@@ -594,21 +598,30 @@ fun ConfigurationScreen(
                                             ) {
                                                 showConnectionTestMenu = false
                                                 // 进行中再次点击 = 停止本次测速
-                                                if (SpeedTestManager.isRunning()) {
+                                                if (speedRunning) {
                                                     SpeedTestManager.cancel()
                                                 } else {
                                                     scope.launch {
                                                         val groupId = DataStore.currentGroupId()
                                                         val profiles = SpeedTestGroupLoader.load(groupId)
-                                                        SpeedTestManager.startGroup(
-                                                            groupId,
-                                                            profiles.map {
-                                                                SpeedTestManager.ProxyEntityParams(
-                                                                    it.first,
-                                                                    it.second,
-                                                                )
-                                                            },
-                                                        )
+                                                        if (profiles.isEmpty()) {
+                                                            snackbar.show(
+                                                                StringOrRes.Direct("分组内没有可测速的节点"),
+                                                            )
+                                                        } else if (!SpeedTestManager.startGroup(
+                                                                groupId,
+                                                                profiles.map {
+                                                                    SpeedTestManager.ProxyEntityParams(
+                                                                        it.first,
+                                                                        it.second,
+                                                                    )
+                                                                },
+                                                            )
+                                                        ) {
+                                                            snackbar.show(
+                                                                StringOrRes.Direct("已有测速任务进行中，请先停止当前任务"),
+                                                            )
+                                                        }
                                                     }
                                                 }
                                             },
