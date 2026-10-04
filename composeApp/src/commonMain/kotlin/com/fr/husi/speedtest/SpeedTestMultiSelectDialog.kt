@@ -23,7 +23,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.fr.husi.GroupOrder
 import com.fr.husi.database.SagerDatabase
+import com.fr.husi.ui.configuration.proxyDisplayComparator
 import kotlinx.coroutines.flow.firstOrNull
 
 /**
@@ -52,9 +54,13 @@ fun SpeedTestMultiSelectDialog(
     val speedState by SpeedTestManager.uiState.collectAsStateWithLifecycle()
 
     LaunchedEffect(groupId) {
+        // 列表顺序 = 主界面显示顺序（group.order 比较器），与批量测速
+        // 的执行顺序保持一致。
+        val group = SagerDatabase.groupDao.getById(groupId).firstOrNull()
         profiles = SagerDatabase.proxyDao.getByGroup(groupId)
             .firstOrNull()
             .orEmpty()
+            .sortedWith(proxyDisplayComparator(group?.order ?: GroupOrder.ORIGIN))
             .map { it.id to it.requireBean().displayName() }
     }
 

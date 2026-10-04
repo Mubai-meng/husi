@@ -54,13 +54,16 @@ class AndroidPlatformInterface : PlatformInterface {
         destinationAddress: String,
         destinationPort: Int,
     ): ConnectionOwner {
+        // 内核查不到属主是常态竞态（短命 UDP/DNS 流、TCP 已关闭），
+        // 连接列表每条都会查一次，刷 ERROR 日志没有价值 —— 只抛错给
+        // Go 侧按 not-found 处理（2026-10-04 日志：2 秒内 30+ 条）。
+        val uid = resolveAndroidRepository().connectivity.getConnectionOwnerUid(
+            ipProtocol,
+            InetSocketAddress(sourceAddress, sourcePort),
+            InetSocketAddress(destinationAddress, destinationPort),
+        )
+        if (uid == Process.INVALID_UID) error("android: connection owner not found")
         try {
-            val uid = resolveAndroidRepository().connectivity.getConnectionOwnerUid(
-                ipProtocol,
-                InetSocketAddress(sourceAddress, sourcePort),
-                InetSocketAddress(destinationAddress, destinationPort),
-            )
-            if (uid == Process.INVALID_UID) error("android: connection owner not found")
             PackageCache.awaitLoadSync()
             val packages = PackageCache.uidMap[uid]
             return ConnectionOwner(uid, packages?.toStringIterator(packages.size))

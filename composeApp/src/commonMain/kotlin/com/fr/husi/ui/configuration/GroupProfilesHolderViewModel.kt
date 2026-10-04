@@ -71,6 +71,31 @@ private data class PendingScrollToProxy(
     val animated: Boolean,
 )
 
+/**
+ * 主界面分组节点列表的显示顺序比较器（单一事实来源）。
+ *
+ * 除列表页外，批量测速（SpeedTestGroupLoader / 多选对话框）也用它排序，
+ * 保证"从第一个按顺序测"的顺序 = 用户在主界面实际看到的顺序。
+ */
+internal fun proxyDisplayComparator(order: Int): Comparator<ProxyEntity> = when (order) {
+    GroupOrder.BY_NAME -> compareBy { it.displayName() }
+    GroupOrder.BY_DELAY -> compareBy<ProxyEntity> {
+        when {
+            it.status == ProxyEntity.STATUS_AVAILABLE -> 0
+            !it.error.isNullOrBlank() -> 1
+            else -> 2
+        }
+    }.thenBy {
+        if (it.status == ProxyEntity.STATUS_AVAILABLE) {
+            it.ping
+        } else {
+            0
+        }
+    }
+
+    else -> compareBy<ProxyEntity> { it.userOrder }.thenBy { it.id }
+}
+
 @Stable
 class GroupProfilesHolderViewModel(
     initialGroup: ProxyGroup,
@@ -193,24 +218,7 @@ class GroupProfilesHolderViewModel(
         val current = DataStore.currentProfile.get()
         val selected = preSelected ?: DataStore.selectedProxy.get()
 
-        val comparator: Comparator<ProxyEntity> = when (group.order) {
-            GroupOrder.BY_NAME -> compareBy { it.displayName() }
-            GroupOrder.BY_DELAY -> compareBy<ProxyEntity> {
-                when {
-                    it.status == ProxyEntity.STATUS_AVAILABLE -> 0
-                    !it.error.isNullOrBlank() -> 1
-                    else -> 2
-                }
-            }.thenBy {
-                if (it.status == ProxyEntity.STATUS_AVAILABLE) {
-                    it.ping
-                } else {
-                    0
-                }
-            }
-
-            else -> compareBy<ProxyEntity> { it.userOrder }.thenBy { it.id }
-        }
+        val comparator = proxyDisplayComparator(group.order)
         var selectedIndex = -1
         val filtered = (raw ?: withContext(Dispatchers.IO) {
             SagerDatabase.proxyDao.getByGroup(group.id).first()

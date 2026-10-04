@@ -8,6 +8,7 @@ import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import com.fr.husi.core.CoreClient
+import com.fr.husi.database.DataStore
 import com.fr.husi.ktx.Logs
 import com.fr.husi.ktx.hasPermission
 import com.fr.husi.lib.R
@@ -20,6 +21,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
@@ -48,12 +50,22 @@ internal class VpnAuthNotificationWatcher(
         }
         val coreClient: CoreClient = GlobalContext.get().get()
         watchScope.launch {
-            try {
-                coreClient.pending().collect { pendingAuth.value = it }
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                Logs.w(logLabel, e)
+            // 自愈式订阅：daemon 侧 SubscribeOpen{VPN,Connect}Status 在服务
+            // 非 STARTED/STARTING 状态时一律拒绝（os.ErrInvalid → gRPC
+            // "invalid argument"，2026-10-04 日志实测），且流一旦关闭 watcher
+            // 就永久失效直到服务重启。这里改为：服务未运行时等待，流断开后
+            // 退避重订阅，覆盖启动竞态与服务重启。
+            while (true) {
+                try {
+                    while (!DataStore.serviceState.started) delay(1_000)
+                    coreClient.pending().collect { pendingAuth.value = it }
+                    // 正常结束 = 服务停止关闭流 → 回到等待循环
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    Logs.w(logLabel, e)
+                }
+                delay(3_000)
             }
         }
     }

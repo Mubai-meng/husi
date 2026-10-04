@@ -8,9 +8,11 @@ import com.fr.husi.core.ServiceEvent
 import com.fr.husi.database.DataStore
 import com.fr.husi.database.SagerDatabase
 import com.fr.husi.fmt.buildConfig
+import com.fr.husi.GroupOrder
 import com.fr.husi.ktx.readableMessage
 import com.fr.husi.plugin.PluginNotFoundException
 import com.fr.husi.repository.resolveRepository
+import com.fr.husi.ui.configuration.proxyDisplayComparator
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -430,9 +432,20 @@ object SpeedTestManager {
 
 /** 分组节点加载（从核心 DAO 只读查询，避免 UI 层直接触碰 Room 细节）。 */
 internal object SpeedTestGroupLoader {
-    /** @return (proxyId, groupId) 列表。 */
-    suspend fun load(groupId: Long): List<Pair<Long, Long>> =
-        SagerDatabase.proxyDao.getByGroup(groupId).firstOrNull()
-            .orEmpty()
-            .map { it.id to it.groupId }
+    /**
+     * @return (proxyId, groupId) 列表。
+     *
+     * ⚠️ 顺序 = 主界面实际显示顺序（group.order 的显示比较器，见
+     * proxyDisplayComparator）：用户要求的"从第一个按顺序来"指的是
+     * 界面上看到的节点顺序，而不是数据库 userOrder 顺序 —— 按名称/
+     * 按延迟排序后两者不同（2026-10-04 日志实测偏差）。
+     */
+    suspend fun load(groupId: Long): List<Pair<Long, Long>> {
+        val group = SagerDatabase.groupDao.getById(groupId).firstOrNull()
+        val profiles = SagerDatabase.proxyDao.getByGroup(groupId).firstOrNull().orEmpty()
+        val sorted = profiles.sortedWith(
+            proxyDisplayComparator(group?.order ?: GroupOrder.ORIGIN),
+        )
+        return sorted.map { it.id to it.groupId }
+    }
 }
