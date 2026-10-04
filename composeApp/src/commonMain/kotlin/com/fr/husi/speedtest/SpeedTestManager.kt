@@ -64,10 +64,17 @@ object SpeedTestManager {
     private const val SERVICE_STATE_SYNC_TIMEOUT_MS = 3_000L
 
     /**
-     * 批量测速单节点硬超时：到点自动切下一个节点（用户要求 5 秒）。
-     * 单节点入口（节点卡片"测速此节点"）不套此上限，按设置跑满时长。
+     * 批量测速单节点硬预算：到点自动切下一个节点（用户要求 5 秒）。
+     * 单节点入口（节点卡片"测速此节点"）不套此预算，按设置跑满时长。
      */
     const val NODE_TIMEOUT_MS = 5_000L
+
+    /** 每节点预算中预留给"实例启动 + 连接建立"的部分；其余给下载计量。 */
+    private const val NODE_OVERHEAD_MS = 1_000L
+
+    /** Kotlin 侧兜底超时在 Go 预算之上额外放宽的部分：正常情况 Go 会话
+     * 会在预算内自然收尾并回传完整部分结果，兜底只拦截真正挂死的异常。 */
+    private const val NODE_GUARD_EXTRA_MS = 3_000L
 
     /** 超时切下一个节点前的缓冲：speedTestStop 在 IO 线程异步执行
      * （最长阻塞 35s 等实例关闭），Go 侧并发会话上限 4，稍等片刻
@@ -224,9 +231,17 @@ object SpeedTestManager {
                 runCatching { resolveRepository().startService() }
                     .onSuccess { autoStarted = true }
                     .onFailure { e ->
+                        // ⚠️ 启动失败必须中止：服务没起来时 started=false，
+                        // 继续跑会走 local JNI（无 protect），而此时 TUN 往往
+                        // 还在（停止中/残留），测速出站会被 TUN 全量劫持变成
+                        // 双重代理 —— 2026-10-04 日志实测整批毫秒级全灭。
                         _uiState.update {
-                            it.copy(message = "服务启动失败: " + e.readableMessage)
+                            it.copy(
+                                running = false,
+                                message = "服务启动失败，已取消本次测速: " + e.readableMessage,
+                            )
                         }
+                        return
                     }
                 if (autoStarted) {
                     if (awaitServiceStarted(timeoutMs = 30_000)) {
@@ -250,14 +265,27 @@ object SpeedTestManager {
             // ---- 顺序批量：严格从第一个节点按列表顺序逐个测（用户要求）。
             // 顺序执行同时天然规避了 sing-box 并发出站切换的 panic 风险
             // （⚠️ 安卓 sing-box 频繁并发切换出站极易 panic —— 见类注释）。
+            //
+            // ⚠️ 预算下移为 Go 参数（2026-10-04 日志教训）：之前把 5s 硬
+            // 超时放在 Kotlin collect 上，Go 侧 downloadSeconds=15 还在跑，
+            // 5s 到点直接掐断 collect → Go 测得的部分速率（日志实测 41.72
+            // Mbps）根本回不来，UI 全部显示"测速超时"。现在改为：预算减去
+            // 启动开销后作为 Go 的 downloadSeconds —— Go 到点自然收尾并
+            // 回传完整部分结果；Kotlin 超时只作为兜底（预算+3s），拦真正
+            // 挂死的异常。批量预算全给下载（上传不吃批量预算）。
+            val batchDownloadSeconds = perNodeTimeoutMs?.let { budget ->
+                ((budget - NODE_OVERHEAD_MS) / 1000).toInt()
+                    .coerceIn(2, settings.downloadSeconds)
+            }
+            val guardTimeoutMs = perNodeTimeoutMs?.plus(NODE_GUARD_EXTRA_MS)
             for (profile in profiles) {
                 currentCoroutineContext().ensureActive()
                 val entity = withContext(Dispatchers.IO) {
-                    if (perNodeTimeoutMs == null) {
-                        testProfile(profile, settings)
+                    if (guardTimeoutMs == null) {
+                        testProfile(profile, settings, null)
                     } else {
-                        withTimeoutOrNull(perNodeTimeoutMs) {
-                            testProfile(profile, settings)
+                        withTimeoutOrNull(guardTimeoutMs) {
+                            testProfile(profile, settings, batchDownloadSeconds)
                         } ?: SpeedTestEntity(
                             proxyId = profile.id,
                             groupId = profile.groupId,
@@ -353,10 +381,14 @@ object SpeedTestManager {
     /**
      * 测速单个节点。任何失败都折叠为 error 字段，绝不抛出 —— 保证
      * 单节点异常不中断整个批量队列（CancellationException 除外）。
+     *
+     * @param batchDownloadSeconds 批量模式下的下载阶段时长（Go 侧到时
+     *   自然收尾并回传部分结果）；null = 单节点入口，按设置跑满。
      */
     private suspend fun testProfile(
         profile: ProxyEntityParams,
         settings: SpeedTestSettings.Snapshot,
+        batchDownloadSeconds: Int?,
     ): SpeedTestEntity {
         val entity = SpeedTestEntity(
             proxyId = profile.id,
@@ -389,9 +421,14 @@ object SpeedTestManager {
 
             val params = SpeedTestEngine.Params(
                 maxConnections = settings.maxConnections,
-                downloadSeconds = settings.downloadSeconds,
+                downloadSeconds = batchDownloadSeconds ?: settings.downloadSeconds,
                 uploadSeconds = settings.uploadSeconds,
-                measureUpload = settings.measureUpload,
+                // 批量预算全给下载：5s 内再塞上传只会两个方向都测不准。
+                measureUpload = if (batchDownloadSeconds != null) {
+                    false
+                } else {
+                    settings.measureUpload
+                },
             )
 
             SpeedTestEngine.run(config.configJson, params).collect { event ->
