@@ -26,6 +26,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"sync"
 	"time"
 
 	speedtestgo "github.com/showwin/speedtest-go/speedtest"
@@ -83,6 +84,48 @@ type EventFunc func(Event)
 // defaultPhaseSeconds 未显式配置时单阶段默认时长。
 const defaultPhaseSeconds = 10
 
+// ---- 服务器列表跨会话缓存 ----
+//
+// 服务器列表要经被测节点的代理从 speedtest.net 拉取, 慢节点上 TLS+HTTP
+// 往返要 1~2s; 批量测速(每节点硬超时 5s)时这段固定开销吃掉一半预算,
+// 慢节点甚至在进入下载阶段前就超时 —— 2026-10-04 日志实测整批节点
+// download total=0 bytes, 全部报"测速超时"。
+//
+// 服务器列表只是全局候选集, 与具体走哪个节点无关(下载请求仍然 100%
+// 经被测节点的回环入站), 因此按 keyword 缓存跨会话复用; 命中时完全
+// 跳过发现阶段, 把每节点预算全部留给下载计量。拉取失败时回退任意龄期
+// 的旧缓存(慢节点上拉取失败很常见, 好过整批失败)。
+const serverListCacheTTL = 30 * time.Minute
+
+type serverCacheEntry struct {
+	servers speedtestgo.Servers
+	fetched time.Time
+}
+
+var (
+	serverCacheMu   sync.Mutex
+	serverListCache = map[string]serverCacheEntry{}
+)
+
+func cachedServerList(keyword string, maxAge time.Duration) (speedtestgo.Servers, bool) {
+	serverCacheMu.Lock()
+	defer serverCacheMu.Unlock()
+	e, ok := serverListCache[keyword]
+	if !ok || time.Since(e.fetched) > maxAge {
+		return nil, false
+	}
+	return e.servers, true
+}
+
+func storeServerList(keyword string, servers speedtestgo.Servers) {
+	if len(servers) == 0 {
+		return
+	}
+	serverCacheMu.Lock()
+	defer serverCacheMu.Unlock()
+	serverListCache[keyword] = serverCacheEntry{servers: servers, fetched: time.Now()}
+}
+
 // Run 执行一次完整带宽测速。ctx 取消会中止测量并返回当前已测得的
 // 部分速率(不算错误)。onEvent 可为 nil。
 func Run(ctx context.Context, opts Options, onEvent EventFunc) (Result, error) {
@@ -106,28 +149,44 @@ func Run(ctx context.Context, opts Options, onEvent EventFunc) (Result, error) {
 	}
 	connections := max(opts.MaxConnections, 1)
 
-	// ---- 服务器发现(仅此一处使用 speedtest-go) ----
+	// ---- 服务器发现(仅此一处使用 speedtest-go, 带跨会话缓存) ----
 	//
 	// WithDoer(&http.Client{}): 防止库把自身 Transport 挂到
 	// http.DefaultClient 上造成全局污染; 发现请求始终经由
 	// UserConfig.Proxy 指定的代理发起, 不会直连。
-	client := speedtestgo.New(
-		speedtestgo.WithDoer(&http.Client{}),
-		speedtestgo.WithUserConfig(&speedtestgo.UserConfig{
-			Proxy:          opts.ProxyURL,
-			MaxConnections: connections,
-			Keyword:        opts.ServerKeyword,
-		}),
-	)
+	var servers speedtestgo.Servers
+	if cached, ok := cachedServerList(opts.ServerKeyword, serverListCacheTTL); ok {
+		servers = cached
+		diag(fmt.Sprintf("speedtest: server list cache hit (%d servers), skip discovery",
+			len(servers)))
+	} else {
+		client := speedtestgo.New(
+			speedtestgo.WithDoer(&http.Client{}),
+			speedtestgo.WithUserConfig(&speedtestgo.UserConfig{
+				Proxy:          opts.ProxyURL,
+				MaxConnections: connections,
+				Keyword:        opts.ServerKeyword,
+			}),
+		)
 
-	// 用户地理位置用于按距离挑选服务器; 走节点访问, 失败不致命。
-	if _, err := client.FetchUserInfoContext(ctx); err != nil {
-		onEvent(Event{Phase: "server", Message: "fetch user info: " + err.Error()})
-	}
+		// 用户地理位置用于按距离挑选服务器; 走节点访问, 失败不致命。
+		if _, err := client.FetchUserInfoContext(ctx); err != nil {
+			onEvent(Event{Phase: "server", Message: "fetch user info: " + err.Error()})
+		}
 
-	servers, err := client.FetchServerListContext(ctx)
-	if err != nil {
-		return result, fmt.Errorf("fetch server list: %w", err)
+		fetched, err := client.FetchServerListContext(ctx)
+		if err != nil {
+			// 慢节点上拉取失败很常见: 回退任意龄期的旧缓存, 好过整批失败。
+			if stale, ok := cachedServerList(opts.ServerKeyword, 24*time.Hour); ok {
+				servers = stale
+				diag("speedtest: fetch server list failed, fallback to stale cache: " + err.Error())
+			} else {
+				return result, fmt.Errorf("fetch server list: %w", err)
+			}
+		} else {
+			storeServerList(opts.ServerKeyword, fetched)
+			servers = fetched
+		}
 	}
 	if len(servers) == 0 {
 		return result, errors.New("speedtest: no server available")
