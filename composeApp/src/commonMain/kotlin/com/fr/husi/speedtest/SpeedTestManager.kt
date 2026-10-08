@@ -1,8 +1,6 @@
 package com.fr.husi.speedtest
 
 import com.fr.husi.bg.ServiceState
-import com.fr.husi.bg.buildPluginSpecs
-import com.fr.husi.bg.initPlugins
 import com.fr.husi.core.CoreClient
 import com.fr.husi.core.ServiceEvent
 import com.fr.husi.database.DataStore
@@ -11,7 +9,6 @@ import com.fr.husi.fmt.buildConfig
 import com.fr.husi.GroupOrder
 import com.fr.husi.ktx.readableMessage
 import com.fr.husi.plugin.PluginNotFoundException
-import com.fr.husi.repository.resolveRepository
 import com.fr.husi.ui.configuration.proxyDisplayComparator
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -198,16 +195,18 @@ object SpeedTestManager {
         val settings = SpeedTestSettings.snapshot()
         _uiState.update { UiState(running = true, total = profiles.size) }
 
-        var autoStarted = false
         val results = mutableListOf<SpeedTestEntity>()
-        // ⚠️ 整个批次（含服务启动段）必须在 try/finally 内：running=true
-        // 一旦置位，任何退出路径（取消、异常、提前 return）都必须复位，
-        // 否则 UI 永远显示"测速进行中"，后续所有测速入口全部无响应，
-        // 只能重启应用（2026-10 用户实测反馈的根因）。
+        // ⚠️ 整个批次必须在 try/finally 内：running=true 一旦置位，任何
+        // 退出路径（取消、异常、提前 return）都必须复位，否则 UI 永远
+        // 显示"测速进行中"，后续所有测速入口全部无响应，只能重启应用
+        // （2026-10 用户实测反馈的根因）。
         try {
-            // 可靠测速路径需要 :bg 进程的 protect 通道（服务运行中 → bridge）；
-            // 未启动服务时本地实例直连节点，在运营商网络下大多被拒绝。
-            // 用户要求：测速前自动启动服务，测完自动恢复原状态。
+            // ---- 执行位置路由（不改变 VPN 状态，用户 2026-10-08 要求）----
+            //
+            // 服务运行中 → bridge 到 :bg（出站可 protect，防 TUN 劫持）；
+            // 服务未运行 → 本地 JNI 直跑：此时本机没有 TUN，测速实例
+            // 直连节点服务器即可，被墙节点会如实失败（直连物理不可达），
+            // 不再为测速强制开启/关闭 VPN 通道（旧逻辑 2026-10-04 前）。
             //
             // ⚠️ 路由正确性前提：DataStore.serviceState 决定引擎的 bridge/local
             // 选择，而它是事件镜像（WhileSubscribed 5s 停更）的离线副本，可能
@@ -225,40 +224,9 @@ object SpeedTestManager {
                 // 否则引擎会误走 bridge 并悬挂/失败。
                 DataStore.serviceState = ServiceState.Idle
             }
-
             if (!DataStore.serviceState.started) {
-                _uiState.update { it.copy(message = "正在启动网络隧道…") }
-                runCatching { resolveRepository().startService() }
-                    .onSuccess { autoStarted = true }
-                    .onFailure { e ->
-                        // ⚠️ 启动失败必须中止：服务没起来时 started=false，
-                        // 继续跑会走 local JNI（无 protect），而此时 TUN 往往
-                        // 还在（停止中/残留），测速出站会被 TUN 全量劫持变成
-                        // 双重代理 —— 2026-10-04 日志实测整批毫秒级全灭。
-                        _uiState.update {
-                            it.copy(
-                                running = false,
-                                message = "服务启动失败，已取消本次测速: " + e.readableMessage,
-                            )
-                        }
-                        return
-                    }
-                if (autoStarted) {
-                    if (awaitServiceStarted(timeoutMs = 30_000)) {
-                        _uiState.update { it.copy(message = null) }
-                    } else {
-                        // 守护进程确认 30s 仍未 started：TUN 是否存在不可知，
-                        // 此时本地直连可能被 TUN 劫持（双重代理 + 流量误计），
-                        // 宁可取消本次测速，也不能给出污染的结果。
-                        autoStarted = false
-                        _uiState.update {
-                            it.copy(
-                                running = false,
-                                message = "服务启动确认超时，已取消本次测速（可稍后重试）",
-                            )
-                        }
-                        return
-                    }
+                _uiState.update {
+                    it.copy(message = "未连接 VPN：直连模式测速（被墙节点可能失败）")
                 }
             }
 
@@ -326,14 +294,6 @@ object SpeedTestManager {
             _uiState.update {
                 it.copy(running = false, liveRates = emptyMap(), latestError = lastError)
             }
-
-            // 测速前由本任务自动启动的服务 → 测完自动关闭，恢复原状态。
-            if (autoStarted && DataStore.serviceState.canStop) {
-                _uiState.update { it.copy(message = "正在停止网络隧道…") }
-                runCatching { resolveRepository().stopService() }
-                // 等状态离开 started，避免 UI 残留"运行中"错觉。
-                awaitServiceStopped(timeoutMs = 15_000)
-            }
             _uiState.update { it.copy(message = null) }
         }
     }
@@ -356,26 +316,6 @@ object SpeedTestManager {
         // 同步回本地镜像，保持两处状态一致。
         DataStore.serviceState = stateEvent.state
         return stateEvent
-    }
-
-    /** 轮询等待服务进入 started —— 每次都直接问守护进程，不信任本地镜像。 */
-    private suspend fun awaitServiceStarted(timeoutMs: Long): Boolean {
-        val deadline = System.currentTimeMillis() + timeoutMs
-        while (System.currentTimeMillis() < deadline) {
-            if (refreshServiceState()?.state?.started == true) return true
-            delay(500)
-        }
-        return refreshServiceState()?.state?.started == true
-    }
-
-    private suspend fun awaitServiceStopped(timeoutMs: Long) {
-        val deadline = System.currentTimeMillis() + timeoutMs
-        while (System.currentTimeMillis() < deadline) {
-            val state = refreshServiceState()?.state
-            // 守护进程不可达 = 服务必然未运行（:bg 都没了）。
-            if (state == null || !state.canStop) return
-            delay(500)
-        }
     }
 
     /**

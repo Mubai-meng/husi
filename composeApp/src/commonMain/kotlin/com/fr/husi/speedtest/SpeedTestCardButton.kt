@@ -34,7 +34,7 @@ import org.jetbrains.compose.resources.vectorResource
  * 图标行插入一次调用，见 README-SPEEDTEST-KOTLIN.md 的接入补丁）。
  *
  * 菜单：测速此节点 / 测速整组 / 查看最近结果 / 清除本节点结果。
- * 测速进行中时按钮直接渲染该节点当前实时速率。
+ * 按钮恒显仪表图标（实时速率由卡片状态行展示，图标不动）。
  *
  * ⚠️ 安卓 sing-box 频繁并发切换出站极易 panic 崩溃 —— 所有测速都经
  * [SpeedTestManager]（独立实例 + 并发 ≤2），本组件不含任何网络逻辑。
@@ -51,28 +51,19 @@ fun SpeedTestCardButton(
 
     val uiState by SpeedTestManager.uiState.collectAsStateWithLifecycle()
     val running = uiState.running
-    val myRate = uiState.liveRates[proxyId] ?: 0L
 
     Box(modifier) {
         IconButton(
             onClick = { menuOpen = !menuOpen },
             modifier = Modifier.size(40.dp),
         ) {
-            if (running && myRate > 0L) {
-                Text(
-                    text = formatSpeed(myRate),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.primary,
-                    maxLines = 1,
-                    overflow = TextOverflow.Clip,
-                )
-            } else {
-                Icon(
-                    imageVector = vectorResource(Res.drawable.speed),
-                    contentDescription = "speed test",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
+            // 恒显仪表图标：实时速率已在卡片状态行（"测速中 ↓x MB/s"）
+            // 展示，这里不再替换成数字 —— 用户要求测速时图标保持不动。
+            Icon(
+                imageVector = vectorResource(Res.drawable.speed),
+                contentDescription = "speed test",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
 
         DropdownMenu(
