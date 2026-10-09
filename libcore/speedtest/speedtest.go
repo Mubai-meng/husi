@@ -273,12 +273,19 @@ func Run(ctx context.Context, opts Options, onEvent EventFunc) (Result, error) {
 //     127.0.0.1:listenPort 的 mixed 入站;
 //  2. 丢弃原 route 规则并设置 route.final=outboundTag —— 防止测速流量
 //     被用户分流规则(如 speedtest.net 直连规则)劫持, 保证 100% 走被测节点;
-//  3. outboundTag 为空时自动挑选第一个可测出站(跳过 urltest/selector/
+//  3. protectAvailable=true 时注入 route.auto_detect_interface=true
+//     (Android 上即 protect, 绕过正在运行的 VPN TUN 防双重代理);
+//     false(直连模式, 无 VPN/无平台接口)时不注入 —— 无 TUN 可绕过,
+//     而 Android 上缺平台接口时 sing-box 会退到 netlink 监视器路径,
+//     新版 Android 对普通应用 netlink 收紧(sing-tun: "netlink socket in
+//     Android is banned"), enforceInterfaceMonitor=true 会让 box.New
+//     直接失败, 导致直连模式全部节点测速失败;
+//  4. outboundTag 为空时自动挑选第一个可测出站(跳过 urltest/selector/
 //     dns/direct/block, 与 Karing cluster 的跳过名单一致)。
 //
 // 操作原始 JSON(而非 option 结构体)以尽量降低 sing-box 版本演进带来的
 // 字段漂移风险。
-func InjectSpeedtestLoopback(configJSON, outboundTag string, listenPort int) (string, error) {
+func InjectSpeedtestLoopback(configJSON, outboundTag string, listenPort int, protectAvailable bool) (string, error) {
 	var root map[string]any
 	if err := json.Unmarshal([]byte(configJSON), &root); err != nil {
 		return "", fmt.Errorf("speedtest: parse config: %w", err)
@@ -303,13 +310,17 @@ func InjectSpeedtestLoopback(configJSON, outboundTag string, listenPort int) (st
 		"listen_port": listenPort,
 	}}
 	// 路由收敛: 丢弃规则, 全部走被测出站。
-	// ⚠️ auto_detect_interface 必须无条件强制为 true(Android 上即 protect
-	// 绕过本机 VPN TUN 的开关): 2026-10-01 日志实测, 缺失时测速实例的
-	// 出站连接被正在运行的 VPN TUN 全量劫持, 变成"测速实例 → 主实例
-	// trojan → 节点"的双重代理, 且主实例把测速流量全部计入被测节点的
-	// 流量统计(卡片 ↑↓ 暴涨)。buildConfig 产出的原配置虽带此字段, 但为
-	// 防上游字段漂移, 这里不再依赖原值, 直接强制注入。
-	newRoute := map[string]any{"final": tag, "auto_detect_interface": true}
+	// ⚠️ auto_detect_interface 仅在 protect 可用时注入(= 有 platformInterface
+	// 的 bridge 路径, 即 VPN 运行中): 缺失时测速实例的出站连接会被正在运行
+	// 的 VPN TUN 全量劫持, 变成"测速实例 → 主实例 trojan → 节点"的双重代理
+	// (2026-10-01 日志实测)。反过来, 直连模式(无 VPN, platformInterface=nil)
+	// 时绝不能注入: Android 上 sing-box 会退到 netlink 监视器路径且
+	// enforceInterfaceMonitor=true, netlink 被系统禁用/无默认路由时
+	// box.New 直接失败 → 全部节点测速失败(2026-10-04 直连模式全挂的根因)。
+	newRoute := map[string]any{"final": tag}
+	if protectAvailable {
+		newRoute["auto_detect_interface"] = true
+	}
 	if oldRoute, ok := root["route"].(map[string]any); ok {
 		for _, key := range []string{"default_mark", "default_domain_resolver"} {
 			if v, exists := oldRoute[key]; exists {

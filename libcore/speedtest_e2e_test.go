@@ -19,7 +19,7 @@ func TestSpeedtestE2E(t *testing.T) {
 	if err != nil {
 		t.Fatalf("pick port: %v", err)
 	}
-	testConfig, err := speedtest.InjectSpeedtestLoopback(configJSON, "target", port)
+	testConfig, err := speedtest.InjectSpeedtestLoopback(configJSON, "target", port, false)
 	if err != nil {
 		t.Fatalf("inject: %v", err)
 	}

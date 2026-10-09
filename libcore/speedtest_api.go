@@ -157,13 +157,21 @@ func startSpeedTestSession(
 	if err != nil {
 		return 0, E.Cause(err, "pick loopback port")
 	}
-	testConfig, err := speedtest.InjectSpeedtestLoopback(req.Config, req.OutboundTag, port)
+	// protect 可用性决定 auto_detect_interface 注入与否:
+	//   - VPN 运行(bridge, platformInterface != nil): 注入, 防 TUN 双重代理;
+	//   - 直连(UI JNI, platformInterface == nil): 不注入, 避免 Android
+	//     netlink 监视器路径导致 box.New 失败(详见 InjectSpeedtestLoopback)。
+	testConfig, err := speedtest.InjectSpeedtestLoopback(req.Config, req.OutboundTag, port, platformInterface != nil)
 	if err != nil {
 		return 0, err
 	}
 	// 内核版本标记: 用于远程分辨设备上跑的是哪一版测速内核
-	// (v2 = 自研计量 + route.auto_detect_interface 强制注入)。
-	log.Info("speedtest: session start (kernel v2: protect forced)")
+	// (v3 = 自研计量 + auto_detect_interface 按 protect 可用性条件注入)。
+	if platformInterface != nil {
+		log.Info("speedtest: session start (kernel v3: protect available, auto_detect_interface on)")
+	} else {
+		log.Info("speedtest: session start (kernel v3: direct mode, no protect, auto_detect_interface off)")
+	}
 
 	ctx := parentCtx
 	if platformInterface != nil {
