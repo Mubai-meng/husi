@@ -879,21 +879,18 @@ private fun DraggableSwipeableItemScope<ProfileItem>.ProxyCard(
 
                 // 带宽测速摘要独立行: 视觉上位于延迟行之前（用户要求），
                 // 单独一行避免长文本挤压地址/流量行导致布局竖排。
-                // ⚠️ 恒定占位（minLines=1, 空内容也保留一行高）: 条件渲染会让
-                // 卡片高度随测速开始/出结果变化, 批量测速时前面的节点逐个
-                // "长高"把下方内容往下顶 —— 用户感知为"测速时布局会动、
-                // 节点上方多出一片空白"。占位后卡片高度全程不变。
-                Text(
-                    text = speedLine.orEmpty(),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(start = 0.dp, end = 16.dp),
-                    minLines = 1,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
+                if (speedLine != null) {
+                    Text(
+                        text = speedLine,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(start = 0.dp, end = 16.dp),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
 
                 if (showMiddleRow) {
                     Row(
