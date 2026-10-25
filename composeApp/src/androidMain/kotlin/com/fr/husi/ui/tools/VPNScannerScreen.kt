@@ -52,11 +52,11 @@ import com.fr.husi.resources.back
 import com.fr.husi.resources.cached
 import com.fr.husi.resources.refresh
 import com.fr.husi.resources.scan_vpn_app
+import com.fr.husi.resources.unknown
 import com.fr.husi.resources.vpn_app_type
 import com.fr.husi.resources.vpn_app_type_other
 import com.fr.husi.resources.vpn_core_path
 import com.fr.husi.resources.vpn_core_type
-import com.fr.husi.resources.vpn_core_type_unknown
 import com.fr.husi.resources.vpn_golang_version
 import com.fr.husi.ui.PreviewContainer
 import org.jetbrains.compose.resources.stringResource
@@ -200,7 +200,7 @@ internal actual fun VPNScannerScreen(
                             KeyValueLine(
                                 key = stringResource(Res.string.vpn_core_type),
                                 value = it.vpnType.coreType?.coreType
-                                    ?: stringResource(Res.string.vpn_core_type_unknown),
+                                    ?: stringResource(Res.string.unknown),
                             )
                             it.vpnType.coreType?.corePath?.blankAsNull()?.let { corePath ->
                                 KeyValueLine(

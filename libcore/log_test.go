@@ -2,15 +2,14 @@ package libcore
 
 import (
 	"bufio"
-	"context"
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
-	"testing/synctest"
-	"time"
 
+	"github.com/sagernet/sing-box/log"
 	F "github.com/sagernet/sing/common/format"
 
 	"github.com/stretchr/testify/assert"
@@ -28,13 +27,13 @@ func TestLogWriterConcurrentWritesStayWholeLines(t *testing.T) {
 	require.NoError(t, err)
 	defer file.Close()
 
-	writer := newLogWriter([]io.Writer{file, io.Discard})
+	writer := newLogWriter([]io.Writer{file, io.Discard}, log.LevelTrace)
 
 	var group sync.WaitGroup
 	for id := range writerCount {
 		group.Go(func() {
 			for line := range linesPerWriter {
-				writer.WriteMessage(0, F.ToString("writer ", id, " line ", id, line))
+				writer.WriteMessage(log.LevelInfo, F.ToString("writer ", id, " line ", id, line))
 			}
 		})
 	}
@@ -60,43 +59,14 @@ func TestLogWriterConcurrentWritesStayWholeLines(t *testing.T) {
 	assert.Equal(t, len(seen), writerCount*linesPerWriter)
 }
 
-func TestLogWriterTruncateDoesNotBlockWriters(t *testing.T) {
-	synctest.Test(t, func(t *testing.T) {
-		const (
-			rounds  = 200
-			timeout = time.Second
-		)
+func TestLogWriterDropsMessagesAboveItsLevel(t *testing.T) {
+	var output strings.Builder
+	writer := newLogWriter([]io.Writer{&output}, log.LevelWarn)
 
-		path := filepath.Join(t.TempDir(), "stderr.log")
-		file, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
-		require.NoError(t, err)
-		defer file.Close()
+	writer.WriteMessage(log.LevelError, "error")
+	writer.WriteMessage(log.LevelWarn, "warn")
+	writer.WriteMessage(log.LevelInfo, "info")
+	writer.WriteMessage(log.LevelDebug, "debug")
 
-		writer := newLogWriter([]io.Writer{file})
-
-		ctx, cancel := context.WithTimeout(t.Context(), timeout)
-		defer cancel()
-		done := make(chan struct{})
-		go func() {
-			defer close(done)
-			var group sync.WaitGroup
-			group.Go(func() {
-				for round := range rounds {
-					writer.WriteMessage(0, F.ToString("line ", round))
-				}
-			})
-			group.Go(func() {
-				for range rounds {
-					writer.Clear()
-				}
-			})
-			group.Wait()
-		}()
-
-		select {
-		case <-done:
-		case <-ctx.Done():
-			t.Fatal("write and truncate deadlocked")
-		}
-	})
+	assert.Equal(t, "error\nwarn\n", output.String())
 }

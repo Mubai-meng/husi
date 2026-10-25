@@ -28,7 +28,6 @@ import com.fr.husi.bg.BackendState
 import com.fr.husi.bg.Executable
 import com.fr.husi.bg.ServiceAlert
 import com.fr.husi.bg.ServiceState
-import com.fr.husi.compose.BackHandler
 import com.fr.husi.compose.SagerFab
 import com.fr.husi.compose.ScrollableDialog
 import com.fr.husi.compose.SwipeableSnackbarHost
@@ -78,6 +77,7 @@ import com.fr.husi.resources.warning_amber
 import com.fr.husi.results.LocalResultEventBus
 import com.fr.husi.results.ResultEventBus
 import com.fr.husi.ui.configuration.ProfileSelectSheet
+import com.fr.husi.ui.dashboard.DashboardNoticeTracker
 import com.fr.husi.ui.remote.serverDisplayName
 import kotlinx.collections.immutable.persistentListOf
 import kotlinx.collections.immutable.toPersistentList
@@ -99,7 +99,6 @@ import kotlin.time.Duration.Companion.milliseconds
 @Composable
 fun MainScreen(
     modifier: Modifier = Modifier,
-    moveToBackground: () -> Unit,
     initialProcessText: String? = null,
 ) {
     val koin = getKoin()
@@ -112,7 +111,6 @@ fun MainScreen(
             MainScreenContent(
                 modifier = modifier,
                 viewModel = mainScreenScope.get<MainViewModel>(),
-                moveToBackground = moveToBackground,
                 initialProcessText = initialProcessText,
                 koinScope = mainScreenScope,
                 entryProvider = entryProvider,
@@ -125,7 +123,6 @@ fun MainScreen(
 private fun MainScreenContent(
     modifier: Modifier = Modifier,
     viewModel: MainViewModel,
-    moveToBackground: () -> Unit,
     initialProcessText: String?,
     koinScope: Scope,
     entryProvider: EntryProvider<NavKey>,
@@ -137,8 +134,14 @@ private fun MainScreenContent(
     val backStack = rememberNavBackStack(savedStateConfiguration, NavRoutes.Configuration)
     val resultBus = remember { ResultEventBus() }
     val navigator = remember(backStack) { Navigator(backStack) }
+    LaunchedEffect(navigator) {
+        PendingNavigation.routes.collect { route ->
+            if (navigator.currentRoute != route) {
+                navigator.navigateTo(route)
+            }
+        }
+    }
     val selectedTopLevelRoute = navigator.selectedTopLevelRoute
-    val isAtStartDestination = navigator.isAtStartDestination
     val serviceStatus by BackendState.status.collectAsStateWithLifecycle()
     val profilePickerController = remember(koinScope) {
         koinScope.get<ProfilePickerController>()
@@ -192,19 +195,6 @@ private fun MainScreenContent(
             permission.requestPermission(AppPermission.LocalNetwork) { granted ->
                 if (!granted) showLocalNetworkDeniedDialog = true
             }
-        }
-    }
-
-    BackHandler(enabled = true) {
-        when {
-            !isAtStartDestination -> {
-                val popped = navigator.popBackStack()
-                if (!popped) {
-                    navigator.navigateToTopLevelRoute(NavRoutes.Configuration)
-                }
-            }
-
-            else -> moveToBackground()
         }
     }
 
@@ -276,6 +266,14 @@ private fun MainScreenContent(
             TopLevelDestination(Res.string.settings, Res.drawable.settings, NavRoutes.Settings),
         )
     }
+    val dashboardNoticeTracker = koinInject<DashboardNoticeTracker>()
+    val unreadDashboardNoticeCount by dashboardNoticeTracker.unreadCount.collectAsStateWithLifecycle()
+    val isDashboardSelected = selectedTopLevelRoute.matchesRoute(NavRoutes.Dashboard)
+    LaunchedEffect(isDashboardSelected, unreadDashboardNoticeCount) {
+        if (isDashboardSelected && unreadDashboardNoticeCount > 0) {
+            dashboardNoticeTracker.markAllRead()
+        }
+    }
     val navigationItems = topLevelDestinations.map { destination ->
         val selected = selectedTopLevelRoute.matchesRoute(destination.route)
         NavigationSuiteItem(
@@ -286,6 +284,11 @@ private fun MainScreenContent(
                 if (!selected) {
                     navigator.navigateToTopLevelRoute(destination.route)
                 }
+            },
+            badgeCount = if (destination.route == NavRoutes.Dashboard) {
+                unreadDashboardNoticeCount
+            } else {
+                0
             },
         )
     }.toPersistentList()

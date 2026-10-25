@@ -17,17 +17,18 @@ import com.fr.husi.compose.clearClipboardImageCache
 import com.fr.husi.database.DataStore
 import com.fr.husi.database.SagerDatabase
 import com.fr.husi.di.initHusiKoin
-import com.fr.husi.ktx.invariantDirectoryPathString
 import com.fr.husi.ktx.Logs
+import com.fr.husi.ktx.invariantDirectoryPathString
 import com.fr.husi.ktx.runOnDefaultDispatcher
 import com.fr.husi.ktx.runOnIoDispatcher
 import com.fr.husi.libcore.Libcore
 import com.fr.husi.libcore.loadCA
 import com.fr.husi.repository.AndroidRepository
 import com.fr.husi.repository.SagerRepository
+import com.fr.husi.tailscale.TaildropSendService
 import com.fr.husi.utils.CrashHandler
 import com.fr.husi.utils.PackageCache
-import com.fr.husi.utils.copyBundledRuleSetAssetsIfNeeded
+import com.fr.husi.utils.installBundledRuleSets
 import go.Seq
 import kotlinx.coroutines.DEBUG_PROPERTY_NAME
 import kotlinx.coroutines.DEBUG_PROPERTY_VALUE_ON
@@ -64,6 +65,8 @@ class Application : Application(),
             clearClipboardImageCache(cacheDir)
         }
 
+        if (isMainProcess) TaildropSendService.observe(this)
+
         if (isMainProcess) runOnDefaultDispatcher {
             // The component state may drift from the preference, e.g. after a backup restore.
             val hidden = DataStore.hideLauncherIcon.get()
@@ -76,61 +79,25 @@ class Application : Application(),
             }
         }
 
-        Seq.setContext(this)
         runOnDefaultDispatcher {
             repository.updateNotificationChannels()
         }
 
-        // init core
         externalAssets.mkdirs()
-        val rulesProvider = DataStore.rulesProvider.getBlocking()
         val isExpert = DataStore.isExpert.getBlocking()
-        if (isBgProcess) {
-            // :bg 进程必须在启动服务前完成规则资源准备，保持主线程同步。
-            runBlocking {
-                if (rulesProvider == RuleProvider.OFFICIAL) {
-                    copyBundledRuleSetAssetsIfNeeded()
-                }
-                migrateCustomRouteAssets(
-                    externalAssets,
-                    SagerDatabase.assetDao.getAll().first().map { it.name },
-                )
-            }
-        } else {
-            // 主进程：打开 Room 库 + 资源迁移与首帧无关，同步跑在主线程
-            // 会显著推迟首帧（冷启动白屏），改为后台执行。一次性迁移，
-            // 完成前极短窗口内路由资源可能未就位，可接受。
-            runOnDefaultDispatcher {
-                runCatching {
-                    migrateCustomRouteAssets(
-                        externalAssets,
-                        SagerDatabase.assetDao.getAll().first().map { it.name },
-                    )
-                }.onFailure { Logs.w(it) }
-            }
+        if (!isExpert) {
+            Logs.openFile(externalAssets.resolve(LOG_FILE_NAME), DataStore.logLevel.getBlocking())
         }
-        Libcore.initCore(
-            isBgProcess,
-            !isBgProcess,
-            cacheDir.invariantDirectoryPathString(),
-            filesDir.invariantDirectoryPathString(),
-            externalAssets.invariantDirectoryPathString(),
-            DataStore.logMaxLine.getBlocking(),
-            DataStore.logLevel.getBlocking(),
-            rulesProvider == 0,
-            isExpert,
-        )
-        if (isBgProcess) {
-            loadCA(DataStore.certProvider.getBlocking())
-        } else {
-            // 主进程：证书加载（解析 100+ 系统证书）与首帧无关，后台执行。
-            // TLS 由 :bg 进程承担；主进程仅在用户手动触发订阅更新/测速时
-            // 需要，届时早已完成。
-            runOnDefaultDispatcher {
-                runCatching { loadCA(DataStore.certProvider.getBlocking()) }
-                    .onFailure { Logs.w(it) }
+        runBlocking {
+            if (isBgProcess && DataStore.rulesProvider.get() == RuleProvider.OFFICIAL) {
+                installBundledRuleSets()
             }
+            migrateCustomRouteAssets(
+                externalAssets,
+                SagerDatabase.assetDao.getAll().first().map { it.name },
+            )
         }
+        if (isBgProcess) initCore(isExpert)
 
         if (isMainProcess) runOnDefaultDispatcher {
             runCatching {
@@ -161,6 +128,20 @@ class Application : Application(),
                 .penaltyLog()
                 .build(),
         )
+    }
+
+    private fun initCore(isExpert: Boolean) {
+        Seq.setContext(this)
+        Libcore.initCore(
+            cacheDir.invariantDirectoryPathString(),
+            filesDir.invariantDirectoryPathString(),
+            externalAssets.invariantDirectoryPathString(),
+            DataStore.logMaxLine.getBlocking(),
+            DataStore.logLevel.getBlocking(),
+            isExpert,
+        )
+        Logs.attachCore()
+        loadCA(DataStore.certProvider.getBlocking())
     }
 
     override fun onConfigurationChanged(newConfig: Configuration) {

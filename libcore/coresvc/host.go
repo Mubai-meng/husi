@@ -8,7 +8,6 @@ import (
 	"os"
 	"sync"
 	"sync/atomic"
-	"syscall"
 	"time"
 
 	C "github.com/sagernet/sing-box/constant"
@@ -26,11 +25,10 @@ import (
 type Host struct {
 	access sync.Mutex
 
-	ctx              context.Context
-	version          string
-	buildEnvironment string
-	logMaxLines      int
-	appHandler       AppHandler
+	ctx         context.Context
+	version     string
+	logMaxLines int
+	appHandler  AppHandler
 
 	started *daemon.StartedService
 	events  *eventBroadcaster
@@ -50,11 +48,10 @@ type Host struct {
 }
 
 type HostOptions struct {
-	Context          context.Context
-	Version          string
-	BuildEnvironment string
-	LogMaxLines      int
-	AppHandler       AppHandler
+	Context     context.Context
+	Version     string
+	LogMaxLines int
+	AppHandler  AppHandler
 
 	// FileLogSink is attached after a successful StartOrReloadService so box
 	// logs also land in stderr.log. Optional.
@@ -88,7 +85,6 @@ func NewHost(options HostOptions) (*Host, error) {
 	h := &Host{
 		ctx:                     options.Context,
 		version:                 options.Version,
-		buildEnvironment:        options.BuildEnvironment,
 		logMaxLines:             logMaxLines,
 		appHandler:              options.AppHandler,
 		started:                 started,
@@ -142,23 +138,10 @@ func (h *Host) Start(socketPath string) error {
 	if err != nil {
 		return err
 	}
-	// Copied from libbox / previous vario path: Android early-boot EROFS quirk.
-	var listener net.Listener
-	for range 30 {
-		var unixListener *net.UnixListener
-		unixListener, err = net.ListenUnix("unix", &net.UnixAddr{
-			Name: socketPath,
-			Net:  "unix",
-		})
-		if err == nil {
-			listener = unixListener
-			break
-		}
-		if !errors.Is(err, syscall.EROFS) {
-			break
-		}
-		time.Sleep(1 * time.Second)
-	}
+	listener, err := net.ListenUnix("unix", &net.UnixAddr{
+		Name: socketPath,
+		Net:  "unix",
+	})
 	if err != nil {
 		return E.Cause(err, "listen command server")
 	}

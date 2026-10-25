@@ -10,7 +10,7 @@ import com.fr.husi.ui.GroupScreen
 import com.fr.husi.ui.GroupSettingsScreen
 import com.fr.husi.ui.LibrariesScreen
 import com.fr.husi.ui.LocalNavigator
-import com.fr.husi.ui.LogcatScreen
+import com.fr.husi.ui.log.LogcatScreen
 import com.fr.husi.ui.MainScreenScope
 import com.fr.husi.ui.MainViewModel
 import com.fr.husi.ui.SnackbarEmitter
@@ -29,6 +29,10 @@ import com.fr.husi.ui.remote.RemoteControlScreen
 import com.fr.husi.ui.remote.RemoteServerEditScreen
 import com.fr.husi.ui.settings.SettingsPageScreen
 import com.fr.husi.ui.settings.SettingsScreen
+import com.fr.husi.ui.tailscale.TaildropInboxScreen
+import com.fr.husi.ui.tailscale.TailscaleEndpointScreen
+import com.fr.husi.ui.tailscale.TailscaleExitNodeScreen
+import com.fr.husi.ui.tailscale.TailscalePeerScreen
 import com.fr.husi.ui.tools.BackupScreen
 import com.fr.husi.ui.tools.DebugScreen
 import com.fr.husi.ui.tools.GetCertScreen
@@ -38,7 +42,6 @@ import com.fr.husi.ui.tools.RuleSetMatchScreen
 import com.fr.husi.ui.tools.StunScreen
 import org.koin.core.annotation.KoinExperimentalAPI
 import org.koin.core.module.dsl.scopedOf
-import org.koin.core.module.dsl.viewModel
 import org.koin.dsl.module
 import org.koin.dsl.navigation3.navigation
 import org.koin.dsl.onClose
@@ -155,6 +158,51 @@ internal val commonNavigationModule = module {
                     )
                 },
                 onOpenRemoteControl = { navigator.navigateTo(NavRoutes.RemoteControl) },
+                onOpenTailscaleEndpoint = { tag ->
+                    navigator.navigateTo(NavRoutes.Tailscale.Endpoint(tag))
+                },
+            )
+        }
+
+        navigation<NavRoutes.Tailscale.Endpoint> { route ->
+            val navigator = LocalNavigator.current
+            TailscaleEndpointScreen(
+                endpointTag = route.endpointTag,
+                onBackPress = navigator::popBackStack,
+                onOpenPeer = { peerId ->
+                    navigator.navigateTo(NavRoutes.Tailscale.Peer(route.endpointTag, peerId))
+                },
+                onOpenExitNode = {
+                    navigator.navigateTo(NavRoutes.Tailscale.ExitNodePicker(route.endpointTag))
+                },
+                onOpenInbox = {
+                    navigator.navigateTo(NavRoutes.Tailscale.TaildropInbox(route.endpointTag))
+                },
+            )
+        }
+
+        navigation<NavRoutes.Tailscale.Peer> { route ->
+            val navigator = LocalNavigator.current
+            TailscalePeerScreen(
+                endpointTag = route.endpointTag,
+                peerId = route.peerId,
+                onBackPress = navigator::popBackStack,
+            )
+        }
+
+        navigation<NavRoutes.Tailscale.ExitNodePicker> { route ->
+            val navigator = LocalNavigator.current
+            TailscaleExitNodeScreen(
+                endpointTag = route.endpointTag,
+                onBackPress = navigator::popBackStack,
+            )
+        }
+
+        navigation<NavRoutes.Tailscale.TaildropInbox> { route ->
+            val navigator = LocalNavigator.current
+            TaildropInboxScreen(
+                endpointTag = route.endpointTag,
+                onBackPress = navigator::popBackStack,
             )
         }
 

@@ -17,74 +17,67 @@ import com.fr.husi.ktx.queryParameterNotBlank
 import com.fr.husi.ktx.toJsonStringKxs
 import com.fr.husi.ktx.unUrlSafe
 import com.fr.husi.ktx.wrapIPV6Host
-import com.fr.husi.libcore.Libcore
+import io.github.xchacha20_poly1305.kpuri.Url
+import io.github.xchacha20_poly1305.kpuri.buildUrl
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 
 fun parseNaive(link: String): NaiveBean {
-    val url = Libcore.parseURL(link)
+    val url = Url.parse(link)
     return NaiveBean().also {
-        it.proto = url.scheme.substringAfter("+").substringBefore(":")
+        it.proto = url.scheme.orEmpty().substringAfter("+").substringBefore(":")
     }.apply {
-        serverAddress = url.host
-        serverPort = url.ports.toIntOrNull() ?: 443
-        username = url.username
-        password = url.password
-        sni = url.queryParameter("sni")
+        serverAddress = url.host.orEmpty()
+        serverPort = url.port?.toIntOrNull() ?: 443
+        username = url.username.orEmpty()
+        password = url.password.orEmpty()
+        sni = url.queryParameter("sni").orEmpty()
         extraHeaders = url.queryParameterNotBlank("extra-headers")
             ?.unUrlSafe()
             ?.replace("\r\n", "\n")
             .orEmpty()
         insecureConcurrency = url.queryParameterNotBlank("insecure-concurrency")?.toIntOrNull() ?: 0
-        name = url.fragment
+        name = url.fragment.orEmpty()
         initializeDefaultValues()
     }
 }
 
-fun NaiveBean.toUri(proxyOnly: Boolean = false): String {
-    val builder = Libcore.newURL(if (proxyOnly) proto else "naive+$proto").apply {
-        host = finalAddress
-        ports = finalPort.toString()
+fun NaiveBean.toUri(): String = buildUrl("naive+$proto") {
+    host = serverAddress
+    port = serverPort.toString()
+    this@toUri.username.blankAsNull()?.let { username = it }
+    this@toUri.password.blankAsNull()?.let { password = it }
+    if (sni.isNotBlank()) {
+        addQueryParameter("sni", sni)
     }
-    if (username.isNotBlank()) {
-        builder.username = username
+    if (extraHeaders.isNotBlank()) {
+        addQueryParameter("extra-headers", extraHeaders)
     }
-    if (password.isNotBlank()) {
-        builder.password = password
+    if (name.isNotBlank()) {
+        fragment = name
     }
-    if (!proxyOnly) {
-        if (sni.isNotBlank()) {
-            builder.addQueryParameter("sni", sni)
-        }
-        if (extraHeaders.isNotBlank()) {
-            builder.addQueryParameter("extra-headers", extraHeaders)
-        }
-        if (name.isNotBlank()) {
-            builder.fragment = name
-        }
-        if (insecureConcurrency > 0) {
-            builder.addQueryParameter("insecure-concurrency", "$insecureConcurrency")
-        }
+    if (insecureConcurrency > 0) {
+        addQueryParameter("insecure-concurrency", "$insecureConcurrency")
     }
-    return builder.string
-}
+}.toString()
+
+private fun NaiveBean.proxyUri(proxyHost: String): String = buildUrl(proto) {
+    host = proxyHost
+    port = finalPort.toString()
+    this@proxyUri.username.blankAsNull()?.let { username = it }
+    this@proxyUri.password.blankAsNull()?.let { password = it }
+}.toString()
 
 fun NaiveBean.buildNaiveConfig(port: Int): String {
-    finalAddress = finalAddress.wrapIPV6Host()
-    serverAddress = serverAddress.wrapIPV6Host()
-
-    val hostResolverRules = if (sni.isNotBlank()) {
-        "MAP $sni $finalAddress".also { finalAddress = sni }
-    } else if (!serverAddress.isIpAddress()) {
-        "MAP $serverAddress $finalAddress".also { finalAddress = serverAddress }
-    } else {
-        null
-    }
+    // Chromium verifies TLS against the proxy host, so keep the server name there
+    // and resolve it to the address ConfigBuilder assigned, usually a mapping inbound.
+    val serverName = sni.blankAsNull() ?: serverAddress.takeUnless { it.isIpAddress() }
+    val hostResolverRules = serverName?.let { "MAP $it ${finalAddress.wrapIPV6Host()}" }
 
     return buildJsonObject {
         hostResolverRules?.let { put("host-resolver-rules", it) }
         put("listen", "socks://$LOCALHOST4:$port")
-        put("proxy", toUri(true).replace(",", "%2C"))
+        put("proxy", proxyUri(serverName ?: finalAddress).replace(",", "%2C"))
         extraHeaders.blankAsNull()?.let { put("extra-headers", it.split("\n").joinToString("\r\n")) }
         if (DataStore.logLevel.getBlocking() > 0) put("log", "")
         insecureConcurrency.takeIf { it > 0 }?.let { put("insecure-concurrency", it) }

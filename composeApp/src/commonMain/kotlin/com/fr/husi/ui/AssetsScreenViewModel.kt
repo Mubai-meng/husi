@@ -18,10 +18,9 @@ import com.fr.husi.ktx.Logs
 import com.fr.husi.ktx.blankAsNull
 import com.fr.husi.ktx.readableMessage
 import com.fr.husi.ktx.runOnDefaultDispatcher
-import com.fr.husi.libcore.Libcore
 import com.fr.husi.resources.Res
 import com.fr.husi.resources.route_asset_no_update
-import com.fr.husi.utils.copyBundledRuleSetAssetsIfNeeded
+import com.fr.husi.utils.installBundledRuleSets
 import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -210,10 +209,9 @@ internal class AssetsScreenViewModel(
         if (DataStore.rulesProvider.get() != RuleProvider.OFFICIAL) return@launch
         uiState.update { it.copy(process = 0f) }
         try {
-            copyBundledRuleSetAssetsIfNeeded()
             assetsDir.resolve("geoip.version.txt").delete()
             assetsDir.resolve("geosite.version.txt").delete()
-            Libcore.extractAssets()
+            installBundledRuleSets()
             DataStore.routeAssetsLastUpdated.set(currentEpochSeconds())
             RouteAssetUpdater.reconfigureUpdater()
         } catch (e: Exception) {

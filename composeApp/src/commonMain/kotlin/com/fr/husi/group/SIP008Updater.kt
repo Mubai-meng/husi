@@ -19,7 +19,6 @@
 
 package com.fr.husi.group
 
-import com.fr.husi.database.DataStore
 import com.fr.husi.database.ProxyGroup
 import com.fr.husi.database.SubscriptionBean
 import com.fr.husi.fmt.AbstractBean
@@ -27,9 +26,11 @@ import com.fr.husi.fmt.shadowsocks.ShadowsocksBean
 import com.fr.husi.fmt.shadowsocks.pluginToLocal
 import com.fr.husi.ktx.Logs
 import com.fr.husi.ktx.applyDefaultValues
-import com.fr.husi.ktx.generateUserAgent
 import com.fr.husi.ktx.kxs
-import com.fr.husi.libcore.resolveHttpClientFactory
+import com.fr.husi.net.HttpFetchRequest
+import com.fr.husi.net.buildUserAgent
+import com.fr.husi.net.localSocks5Proxy
+import com.fr.husi.net.resolveHttpFetcher
 import com.fr.husi.repository.resolveRepository
 import com.fr.husi.resources.Res
 import com.fr.husi.resources.no_proxies_found_in_subscription
@@ -92,22 +93,16 @@ object SIP008Updater : GroupUpdater() {
                 ?: error(repository.getString(Res.string.no_proxies_found_in_subscription))
         } else {
 
-            val response = resolveHttpClientFactory().newHttpClient().apply {
-                if (DataStore.serviceState.connected) {
-                    useSocks5(
-                        DataStore.mixedPort.get(),
-                        DataStore.inboundUsername.get(),
-                        DataStore.inboundPassword.get(),
-                    )
-                }
+            val request = HttpFetchRequest(
+                url = subscription.link,
+                userAgent = buildUserAgent(subscription.customUserAgent),
                 // Strict !!!
-                restrictedTLS()
-            }.newRequest().apply {
-                setURL(subscription.link)
-                setUserAgent(generateUserAgent(subscription.customUserAgent))
-            }.execute()
+                restrictedTls = true,
+                socks5 = localSocks5Proxy(),
+            )
+            val response = resolveHttpFetcher().fetchText(request)
 
-            sip008Response = kxs.decodeFromString(response.contentString)
+            sip008Response = kxs.decodeFromString(response.content)
         }
 
         subscription.bytesUsed = sip008Response.bytesUsed ?: -1

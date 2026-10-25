@@ -29,8 +29,8 @@ import com.fr.husi.compose.preferenceGroup
 import com.fr.husi.fmt.hysteria.HysteriaBean
 import com.fr.husi.ktx.contentOrUnset
 import com.fr.husi.ktx.intListN
+import com.fr.husi.ktx.parseGoDuration
 import com.fr.husi.ktx.readableMessage
-import com.fr.husi.libcore.Libcore
 import com.fr.husi.resources.Res
 import com.fr.husi.resources.allow_insecure
 import com.fr.husi.resources.allow_insecure_sum
@@ -44,6 +44,7 @@ import com.fr.husi.resources.client_key
 import com.fr.husi.resources.compare_arrows
 import com.fr.husi.resources.copyright
 import com.fr.husi.resources.directions_boat
+import com.fr.husi.resources.disabled
 import com.fr.husi.resources.domino_mask
 import com.fr.husi.resources.ech
 import com.fr.husi.resources.ech_config
@@ -63,7 +64,6 @@ import com.fr.husi.resources.hysteria_auth_type
 import com.fr.husi.resources.hysteria_bbr_profile
 import com.fr.husi.resources.hysteria_bbr_profile_aggressive
 import com.fr.husi.resources.hysteria_bbr_profile_conservative
-import com.fr.husi.resources.hysteria_bbr_profile_standard
 import com.fr.husi.resources.hysteria_hop_interval_range_hint
 import com.fr.husi.resources.hysteria_obfs
 import com.fr.husi.resources.layers
@@ -73,7 +73,6 @@ import com.fr.husi.resources.mutual_tls
 import com.fr.husi.resources.nfc
 import com.fr.husi.resources.not_set
 import com.fr.husi.resources.password
-import com.fr.husi.resources.plugin_disabled
 import com.fr.husi.resources.profile_config
 import com.fr.husi.resources.profile_name
 import com.fr.husi.resources.protocol
@@ -93,6 +92,7 @@ import com.fr.husi.resources.security
 import com.fr.husi.resources.server_address
 import com.fr.husi.resources.server_port
 import com.fr.husi.resources.sni
+import com.fr.husi.resources.standard
 import com.fr.husi.resources.texture
 import com.fr.husi.resources.timelapse
 import com.fr.husi.resources.toc
@@ -217,7 +217,7 @@ private fun LazyListScope.hysteriaSettings(
         )
         if (uiState.protocolVersion == HysteriaBean.PROTOCOL_VERSION_2) {
             fun obfsTypeName(type: String): StringOrRes = when (type) {
-                HysteriaBean.OBFS_TYPE_NONE -> StringOrRes.Res(Res.string.plugin_disabled)
+                HysteriaBean.OBFS_TYPE_NONE -> StringOrRes.Res(Res.string.disabled)
                 HysteriaBean.OBFS_TYPE_SALAMANDER -> StringOrRes.Direct("Salamander")
                 HysteriaBean.OBFS_TYPE_GECKO -> StringOrRes.Direct("Gecko")
                 else -> StringOrRes.Direct(type)
@@ -285,7 +285,7 @@ private fun LazyListScope.hysteriaSettings(
         )
         if (uiState.protocolVersion == HysteriaBean.PROTOCOL_VERSION_1) {
             fun authTypeName(type: Int): StringOrRes = when (type) {
-                HysteriaBean.TYPE_NONE -> StringOrRes.Res(Res.string.plugin_disabled)
+                HysteriaBean.TYPE_NONE -> StringOrRes.Res(Res.string.disabled)
                 HysteriaBean.TYPE_STRING -> StringOrRes.Direct("STRING")
                 HysteriaBean.TYPE_BASE64 -> StringOrRes.Direct("BASE64")
                 else -> error("impossible")
@@ -662,7 +662,7 @@ private fun LazyListScope.hysteriaSettings(
             if (uiState.congestionControl == HysteriaBean.CONGESTION_CONTROL_BBR) {
                 fun bbrProfileName(profile: Int): StringResource = when (profile) {
                     HysteriaBean.BBR_PROFILE_CONSERVATIVE -> Res.string.hysteria_bbr_profile_conservative
-                    HysteriaBean.BBR_PROFILE_STANDARD -> Res.string.hysteria_bbr_profile_standard
+                    HysteriaBean.BBR_PROFILE_STANDARD -> Res.string.standard
                     HysteriaBean.BBR_PROFILE_AGGRESSIVE -> Res.string.hysteria_bbr_profile_aggressive
                     else -> error("impossible")
                 }
@@ -760,7 +760,7 @@ private fun HopIntervalTextField(
                             "Duration range is incomplete"
                         } else try {
                             for (part in parts) {
-                                Libcore.parseDuration(part)
+                                parseGoDuration(part)
                             }
                             null
                         } catch (e: Exception) {

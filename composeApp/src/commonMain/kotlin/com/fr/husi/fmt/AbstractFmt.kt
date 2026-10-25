@@ -23,6 +23,8 @@ import com.fr.husi.fmt.SingBoxOptions.TYPE_SHADOWSOCKS
 import com.fr.husi.fmt.SingBoxOptions.TYPE_SNELL
 import com.fr.husi.fmt.SingBoxOptions.TYPE_SOCKS
 import com.fr.husi.fmt.SingBoxOptions.TYPE_SSH
+import com.fr.husi.fmt.SingBoxOptions.TYPE_TAILCAT
+import com.fr.husi.fmt.SingBoxOptions.TYPE_TAILSCALE
 import com.fr.husi.fmt.SingBoxOptions.TYPE_TROJAN
 import com.fr.husi.fmt.SingBoxOptions.TYPE_TUIC
 import com.fr.husi.fmt.SingBoxOptions.TYPE_VLESS
@@ -70,6 +72,12 @@ import com.fr.husi.fmt.socks.parseSocksOutbound
 import com.fr.husi.fmt.ssh.SSHBean
 import com.fr.husi.fmt.ssh.buildSingBoxOutboundSSHBean
 import com.fr.husi.fmt.ssh.parseSSHOutbound
+import com.fr.husi.fmt.tailscale.TailcatBean
+import com.fr.husi.fmt.tailscale.TailscaleBean
+import com.fr.husi.fmt.tailscale.buildSingBoxEndpointTailscaleBean
+import com.fr.husi.fmt.tailscale.buildSingBoxOutboundTailcatBean
+import com.fr.husi.fmt.tailscale.parseTailcatOutbound
+import com.fr.husi.fmt.tailscale.parseTailscaleEndpoint
 import com.fr.husi.fmt.trojan.TrojanBean
 import com.fr.husi.fmt.trusttunnel.TrustTunnelBean
 import com.fr.husi.fmt.trusttunnel.buildSingBoxOutboundTrustTunnelBean
@@ -143,6 +151,8 @@ fun AbstractBean.toJsonStringKxs(): String = when (this) {
     is SnellBean -> kxs.encodeToString(this)
     is SOCKSBean -> kxs.encodeToString(this)
     is SSHBean -> kxs.encodeToString(this)
+    is TailcatBean -> kxs.encodeToString(this)
+    is TailscaleBean -> kxs.encodeToString(this)
     is TrojanBean -> kxs.encodeToString(this)
     is TrustTunnelBean -> kxs.encodeToString(this)
     is TuicBean -> kxs.encodeToString(this)
@@ -181,6 +191,12 @@ suspend fun buildSingBoxOutbound(bean: AbstractBean): String = when (bean) {
 
     is MASQUEBean ->
         kxs.encodeToString(buildSingBoxEndpointMASQUEBean(bean).apply { tag = bean.name })
+
+    is TailscaleBean ->
+        kxs.encodeToString(buildSingBoxEndpointTailscaleBean(bean).apply { tag = bean.name })
+
+    is TailcatBean ->
+        kxs.encodeToString(buildSingBoxOutboundTailcatBean(bean).apply { tag = bean.name })
 
     is AnyTLSBean ->
         kxs.encodeToString(buildSingBoxOutboundAnyTLSBean(bean).apply { tag = bean.name })
@@ -252,6 +268,10 @@ fun parseOutbound(json: JSONMap): AbstractBean? = when (json["type"].toString())
     TYPE_OPENVPN_CLIENT -> parseOpenVPNEndpoint(json)
 
     TYPE_MASQUE_CLIENT -> parseMASQUEEndpoint(json)
+
+    TYPE_TAILSCALE -> parseTailscaleEndpoint(json)
+
+    TYPE_TAILCAT -> parseTailcatOutbound(json)
 
     TYPE_HYSTERIA -> parseHysteria1Outbound(json)
 

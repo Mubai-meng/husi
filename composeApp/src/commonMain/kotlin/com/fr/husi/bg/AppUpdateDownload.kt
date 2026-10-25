@@ -1,12 +1,11 @@
 package com.fr.husi.bg
 
-import com.fr.husi.database.DataStore
-import com.fr.husi.ktx.USER_AGENT
 import com.fr.husi.ktx.sha256Hex
-import com.fr.husi.libcore.CopyCallback
-import com.fr.husi.libcore.HttpClientFactory
-import com.fr.husi.libcore.NO_OVERALL_TIMEOUT_MS
-import com.fr.husi.libcore.resolveHttpClientFactory
+import com.fr.husi.net.HttpFetchRequest
+import com.fr.husi.net.HttpFetcher
+import com.fr.husi.net.buildUserAgent
+import com.fr.husi.net.localSocks5Proxy
+import com.fr.husi.net.resolveHttpFetcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -24,7 +23,7 @@ class AppUpdateChecksumMismatch(expected: String, actual: String) :
 suspend fun downloadAppUpdate(
     info: AppUpdateInfo,
     cacheDir: File,
-    httpClientFactory: HttpClientFactory = resolveHttpClientFactory(),
+    httpFetcher: HttpFetcher = resolveHttpFetcher(),
     updateProgress: UpdateProgress = {},
 ): File = withContext(Dispatchers.IO) {
     val downloadUrl = requireNotNull(info.downloadUrl) { "no installable asset for this release" }
@@ -34,36 +33,19 @@ suspend fun downloadAppUpdate(
     targetDir.listFiles()?.forEach { it.delete() }
     val targetFile = targetDir.resolve(assetName)
 
-    httpClientFactory.newHttpClient().apply {
-        keepAlive()
-        if (DataStore.serviceState.connected) {
-            useSocks5(
-                DataStore.mixedPort.get(),
-                DataStore.inboundUsername.get(),
-                DataStore.inboundPassword.get(),
-            )
-        }
-    }.newRequest().apply {
-        setURL(downloadUrl)
-        setUserAgent(USER_AGENT)
-        setTimeout(NO_OVERALL_TIMEOUT_MS)
-    }.execute().writeTo(
-        targetFile.absolutePath,
-        object : CopyCallback {
-            private var saved = 0.0
-            private var length = info.sizeBytes.toDouble()
-
-            override fun setLength(length: Long) {
-                if (this.length <= 0) this.length = length.toDouble()
-            }
-
-            override fun update(n: Long) {
-                if (length <= 0) return
-                saved += n.toDouble()
-                updateProgress(((saved / length) * 100.0).toFloat())
-            }
-        },
+    val request = HttpFetchRequest(
+        url = downloadUrl,
+        userAgent = buildUserAgent(),
+        noOverallDeadline = true,
+        socks5 = localSocks5Proxy(),
     )
+    httpFetcher.download(request, targetFile) { copiedBytes, contentLength ->
+        // The release metadata knows the size even when the server omits it.
+        val totalBytes = if (info.sizeBytes > 0) info.sizeBytes else contentLength
+        if (totalBytes > 0) {
+            updateProgress(copiedBytes * 100f / totalBytes)
+        }
+    }
 
     val downloadedSize = targetFile.length()
     val expectedSize = info.sizeBytes

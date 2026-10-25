@@ -67,6 +67,7 @@ import com.fr.husi.compose.material3.Text
 import com.fr.husi.compose.paddingHorizontal
 import com.fr.husi.core.remote.RemoteControlManager
 import com.fr.husi.resources.Res
+import com.fr.husi.resources.active
 import com.fr.husi.resources.ascending
 import com.fr.husi.resources.by_destination
 import com.fr.husi.resources.by_download
@@ -81,7 +82,6 @@ import com.fr.husi.resources.cancel
 import com.fr.husi.resources.cleaning_services
 import com.fr.husi.resources.close
 import com.fr.husi.resources.connection_status
-import com.fr.husi.resources.connection_status_active
 import com.fr.husi.resources.connection_status_closed
 import com.fr.husi.resources.copy_success
 import com.fr.husi.resources.dashboard_done_editing
@@ -104,12 +104,11 @@ import com.fr.husi.resources.proxy_set
 import com.fr.husi.resources.public_icon
 import com.fr.husi.resources.reset_connections
 import com.fr.husi.resources.search
-import com.fr.husi.resources.search_go
 import com.fr.husi.resources.search_outbounds
 import com.fr.husi.resources.search_proxy_sets
-import com.fr.husi.resources.switch_search_mode
 import com.fr.husi.resources.sort
 import com.fr.husi.resources.sort_mode
+import com.fr.husi.resources.switch_search_mode
 import com.fr.husi.resources.traffic_connections
 import com.fr.husi.resources.traffic_status
 import com.fr.husi.resources.warning_amber
@@ -136,6 +135,7 @@ fun DashboardScreen(
     openVPNController: OpenVPNAuthController,
     openRouteSettings: (RouteSettingsUiState) -> Unit,
     onOpenRemoteControl: () -> Unit,
+    onOpenTailscaleEndpoint: (String) -> Unit,
 ) {
     val scope = rememberCoroutineScope()
     val snackbar = LocalSnackbarEmitter.current
@@ -173,7 +173,7 @@ fun DashboardScreen(
             textFieldState = searchTextFieldState,
             searchBarState = searchBarState,
             onSearch = { focusManager.clearFocus() },
-            placeholder = { Text(stringResource(Res.string.search_go)) },
+            placeholder = { Text(stringResource(Res.string.search)) },
             leadingIcon = {
                 Icon(vectorResource(Res.drawable.search), null)
             },
@@ -396,7 +396,7 @@ fun DashboardScreen(
                                             ) {
                                                 DropdownMenuSectionHeader(stringResource(Res.string.connection_status))
                                                 DropdownMenuItem(
-                                                    text = { Text(stringResource(Res.string.connection_status_active)) },
+                                                    text = { Text(stringResource(Res.string.active)) },
                                                     onClick = {
                                                         dashboardViewModel.setQueryActivate(!uiState.showActivate)
                                                     },
@@ -547,6 +547,7 @@ fun DashboardScreen(
                         },
                         isEditing = isEditingDashboard,
                         onWidgetsChange = { dashboardViewModel.setDashboardWidgets(it) },
+                        onOpenTailscaleEndpoint = onOpenTailscaleEndpoint,
                     )
 
                     PAGE_CONNECTIONS -> DashboardConnectionsScreen(

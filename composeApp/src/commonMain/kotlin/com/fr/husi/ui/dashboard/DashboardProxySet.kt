@@ -74,7 +74,6 @@ import com.fr.husi.resources.expand_less
 import com.fr.husi.resources.expand_more
 import com.fr.husi.resources.no_results
 import com.fr.husi.resources.search
-import com.fr.husi.resources.search_go
 import com.fr.husi.resources.selected
 import io.github.oikvpqya.compose.fastscroller.material3.defaultMaterialScrollbarStyle
 import io.github.oikvpqya.compose.fastscroller.rememberScrollbarAdapter
@@ -244,7 +243,7 @@ private fun ProxySetCard(
                             if (shownExpanded && showGroupSearchButton) {
                                 SimpleIconButton(
                                     imageVector = vectorResource(Res.drawable.search),
-                                    contentDescription = stringResource(Res.string.search_go),
+                                    contentDescription = stringResource(Res.string.search),
                                     onClick = { openGroupSearch(proxySet.id) },
                                 )
                             }
@@ -379,7 +378,7 @@ private fun ProxyGroupSearchField(
                     false
                 }
             },
-        placeholder = { Text(stringResource(Res.string.search_go)) },
+        placeholder = { Text(stringResource(Res.string.search)) },
         trailingIcon = {
             SimpleIconButton(
                 imageVector = vectorResource(Res.drawable.close),

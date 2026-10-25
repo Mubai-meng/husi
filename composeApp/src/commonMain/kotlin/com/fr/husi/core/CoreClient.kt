@@ -1,14 +1,19 @@
 package com.fr.husi.core
 
 import com.fr.husi.ktx.Logs
-import com.fr.husi.libcore.BridgeClient
-import com.fr.husi.libcore.Libcore
-import com.fr.husi.libcore.StreamCall
-import com.fr.husi.libcore.StreamHandler
+import com.fr.husi.ktx.invariantPathString
+import io.github.xchacha20_poly1305.kurpc.CallOptions
+import io.github.xchacha20_poly1305.kurpc.Channel as RpcChannel
+import io.github.xchacha20_poly1305.kurpc.ChannelClosedException
+import io.github.xchacha20_poly1305.kurpc.ChannelConfig
+import io.github.xchacha20_poly1305.kurpc.Status as RpcStatus
+import io.github.xchacha20_poly1305.kurpc.StatusException
+import io.github.xchacha20_poly1305.kurpc.TransportException
 import com.fr.husi.proto.daemon.ClashMode
 import com.fr.husi.proto.daemon.ClashModeStatus
 import com.fr.husi.proto.daemon.ConnectionEvents
 import com.fr.husi.proto.daemon.DefaultLogLevel
+import com.fr.husi.proto.daemon.DownloadTaildropFileChunk
 import com.fr.husi.proto.daemon.Groups
 import com.fr.husi.proto.daemon.Log
 import com.fr.husi.proto.daemon.NetworkQualityTestProgress
@@ -23,24 +28,51 @@ import com.fr.husi.proto.daemon.STUNTestProgress
 import com.fr.husi.proto.daemon.ServiceStatus
 import com.fr.husi.proto.daemon.StartedAt
 import com.fr.husi.proto.daemon.Status
+import com.fr.husi.proto.daemon.TaildropInbox
+import com.fr.husi.proto.daemon.TaildropSendClientMessage
+import com.fr.husi.proto.daemon.TaildropSendServerMessage
+import com.fr.husi.proto.daemon.TailscaleCertificate
+import com.fr.husi.proto.daemon.TailscalePingResponse
+import com.fr.husi.proto.daemon.TailscaleSSHClientMessage
+import com.fr.husi.proto.daemon.TailscaleSSHServerMessage
+import com.fr.husi.proto.daemon.TailscaleStatusUpdate
 import com.fr.husi.proto.daemon.Version
+import com.fr.husi.proto.daemon.cancelTaildropReceivingRequest
 import com.fr.husi.proto.daemon.clashMode
 import com.fr.husi.proto.daemon.closeConnectionRequest
+import com.fr.husi.proto.daemon.deleteTaildropFileRequest
+import com.fr.husi.proto.daemon.downloadTaildropFileRequest
+import com.fr.husi.proto.daemon.markTaildropInboxReadRequest
 import com.fr.husi.proto.daemon.networkQualityTestRequest
 import com.fr.husi.proto.daemon.openConnectAuthChallengeCancel
 import com.fr.husi.proto.daemon.openVPNChallengeCancel
 import com.fr.husi.proto.daemon.sTUNTestRequest
 import com.fr.husi.proto.daemon.selectOutboundRequest
 import com.fr.husi.proto.daemon.setGroupExpandRequest
+import com.fr.husi.proto.daemon.setTailscaleExitNodeRequest
 import com.fr.husi.proto.daemon.subscribeConnectionsRequest
 import com.fr.husi.proto.daemon.subscribeStatusRequest
+import com.fr.husi.proto.daemon.subscribeTaildropInboxRequest
+import com.fr.husi.proto.daemon.tailscaleCertificateRequest
+import com.fr.husi.proto.daemon.tailscaleLogoutRequest
+import com.fr.husi.proto.daemon.tailscalePingRequest
 import com.fr.husi.proto.daemon.uRLTestRequest as daemonURLTestRequest
+import com.fr.husi.proto.v1.FormatConfigResponse
 import com.fr.husi.proto.v1.GenerateSchemaResponse
 import com.fr.husi.proto.v1.GetCertMode
 import com.fr.husi.proto.v1.GetCertResponse
+import com.fr.husi.proto.v1.GetRootCertificatesResponse
+import com.fr.husi.proto.v1.AndroidVPNType
+import com.fr.husi.proto.v1.ReadAndroidVPNTypeResponse
+import com.fr.husi.proto.v1.MatchRuleSetsResponse
+import com.fr.husi.proto.v1.PingProtocol
+import com.fr.husi.proto.v1.PingResponse
+import com.fr.husi.proto.v1.RootCertificateStore
 import com.fr.husi.proto.v1.GetClientMetadataResponse
 import com.fr.husi.proto.v1.GetDaemonInfoResponse
 import com.fr.husi.proto.v1.GetVersionResponse
+import com.fr.husi.proto.v1.HTTPFetchRequest
+import com.fr.husi.proto.v1.HTTPFetchResponse
 import com.fr.husi.proto.v1.PluginProcessSpec
 import com.fr.husi.proto.v1.SchemaKind
 import com.fr.husi.proto.v1.StandaloneURLTestResponse
@@ -48,11 +80,22 @@ import com.fr.husi.proto.v1.StartServiceRequest
 import com.fr.husi.proto.v1.SubscribeServiceEventsResponse
 import com.fr.husi.proto.v1.URLTestOptions
 import com.fr.husi.proto.v1.URLTestResponse
+import com.fr.husi.proto.v1.WebDAVDeleteRequest
+import com.fr.husi.proto.v1.WebDAVDownloadRequest
+import com.fr.husi.proto.v1.WebDAVDownloadResponse
+import com.fr.husi.proto.v1.WebDAVListRequest
+import com.fr.husi.proto.v1.WebDAVListResponse
+import com.fr.husi.proto.v1.WebDAVUploadRequest
 import com.fr.husi.proto.v1.attachClientRequest
 import com.fr.husi.proto.v1.checkConfigRequest
 import com.fr.husi.proto.v1.claimServiceRequest
+import com.fr.husi.proto.v1.formatConfigRequest
 import com.fr.husi.proto.v1.generateSchemaRequest
 import com.fr.husi.proto.v1.getCertRequest
+import com.fr.husi.proto.v1.getRootCertificatesRequest
+import com.fr.husi.proto.v1.readAndroidVPNTypeRequest
+import com.fr.husi.proto.v1.matchRuleSetsRequest
+import com.fr.husi.proto.v1.pingRequest
 import com.fr.husi.proto.v1.getClientMetadataRequest
 import com.fr.husi.proto.v1.getDaemonInfoRequest
 import com.fr.husi.proto.v1.getVersionRequest
@@ -68,28 +111,29 @@ import com.fr.husi.proto.v1.takeOverServiceRequest
 import com.fr.husi.proto.v1.uRLTestOptions
 import com.fr.husi.proto.v1.uRLTestRequest
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.CompletableDeferred
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.buffer
-import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.emitAll
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.mapNotNull
-import kotlinx.coroutines.isActive
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.runInterruptible
+import kotlinx.coroutines.flow.transform
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withTimeout
+import javax.net.ssl.SSLSocketFactory
+import java.io.File
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
-import kotlin.time.measureTime
+import kotlin.time.TimeSource
 
 /**
- * Typed suspend/Flow surface over the raw [BridgeClient] gRPC bridge.
+ * Typed suspend/Flow surface over the core's gRPC services.
  *
  * Mirrors the Phase 1 contract: daemon.StartedService for the shared plane,
  * husi.v1.CoreService / ApplicationService / AppService for husi-only RPCs.
@@ -117,6 +161,30 @@ interface CoreClient {
     fun subscribeOpenVPNStatus(): Flow<OpenVPNStatusUpdate>
     suspend fun submitOpenVPNChallengeResponse(submission: OpenVPNChallengeSubmission)
     suspend fun cancelOpenVPNChallenge(endpointTag: String, challengeId: String)
+    fun subscribeTailscaleStatus(): Flow<TailscaleStatusUpdate>
+    fun tailscalePing(tag: String, ip: String): Flow<TailscalePingResponse>
+
+    /** [stableId] empty clears the exit node. */
+    suspend fun setTailscaleExitNode(tag: String, stableId: String)
+    suspend fun tailscaleLogout(tag: String)
+    suspend fun getTailscaleCertificate(
+        tag: String,
+        domain: String,
+        minValiditySeconds: Long = 0,
+    ): TailscaleCertificate
+    fun subscribeTaildropInbox(tag: String): Flow<TaildropInbox>
+    suspend fun markTaildropInboxRead(tag: String)
+    suspend fun deleteTaildropFile(tag: String, name: String)
+    suspend fun cancelTaildropReceiving(tag: String, senderId: String, name: String)
+
+    /**
+     * The first message carries the file size. Later messages carry the bytes.
+     */
+    fun downloadTaildropFile(tag: String, name: String): Flow<DownloadTaildropFileChunk>
+    fun sendTaildropFiles(requests: Flow<TaildropSendClientMessage>): Flow<TaildropSendServerMessage>
+
+    /** The first request must be the start message; the rest carry input and window sizes. */
+    fun startTailscaleSSHSession(requests: Flow<TailscaleSSHClientMessage>): Flow<TailscaleSSHServerMessage>
     suspend fun getVersion(): GetVersionResponse
     suspend fun getDaemonVersion(): Version
     suspend fun getStartedAt(): Long
@@ -146,6 +214,7 @@ interface CoreClient {
     ): Int
 
     suspend fun checkConfig(config: String)
+    suspend fun formatConfig(config: String): String
     suspend fun generateSchema(kind: SchemaKind): String
     suspend fun getCert(
         server: String,
@@ -188,6 +257,31 @@ interface CoreClient {
         http3: Boolean,
     ): Flow<NetworkQualityTestProgress>
 
+    /** One head message, then the body in chunks. */
+    fun httpFetch(request: HTTPFetchRequest): Flow<HTTPFetchResponse>
+
+    suspend fun webdavList(request: WebDAVListRequest): WebDAVListResponse
+
+    /** One head message, then the file in chunks. */
+    suspend fun webdavUpload(requests: Flow<WebDAVUploadRequest>)
+
+    /** The file in chunks. */
+    fun webdavDownload(request: WebDAVDownloadRequest): Flow<WebDAVDownloadResponse>
+
+    suspend fun webdavDelete(request: WebDAVDeleteRequest)
+
+    /** Latency in milliseconds. [port] is ignored by ICMP. */
+    suspend fun ping(protocol: PingProtocol, address: String, port: Int, timeoutMs: Int): Int
+
+    /** File names of the rule sets under [dir] that have a rule matching [keyword], a domain name or IP address. */
+    suspend fun matchRuleSets(dir: File, keyword: String): List<String>
+
+    /** PEM of the roots in [store]. */
+    suspend fun getRootCertificates(store: RootCertificateStore): String
+
+    /** The Go core of the VPN app in [apkPaths], or null when none is revealed. Android only. */
+    suspend fun readAndroidVPNType(apkPaths: List<String>): AndroidVPNType?
+
     suspend fun resetNetwork()
     suspend fun runTask(taskId: String)
 
@@ -207,237 +301,122 @@ interface CoreClient {
 }
 
 class CoreRpcException(
-    val code: String,
+    val code: RpcStatus.Code,
     override val message: String,
     cause: Throwable? = null,
 ) : Exception(message, cause)
 
 /**
- * JNI-free surface of [BridgeClient] so tests can inject a fake without
- * constructing the generated native type.
+ * One Taildrop upload chunk. Matches sing-box `daemon.TaildropChunkSize`: small enough to stay
+ * inside a single gRPC DATA frame.
  */
-internal interface CoreBridge {
-    fun callWithTimeout(method: String, request: ByteArray, timeoutMs: Int): ByteArray
-    fun stream(method: String, request: ByteArray, handler: StreamHandler): CoreStreamCall
-    fun probe()
+const val TAILDROP_CHUNK_SIZE = 16 * 1024 - 64
+
+/** The calls [KurpcCoreClient] makes, so tests can inject a fake instead of a kurpc channel. */
+internal interface CoreChannel {
+    suspend fun unary(method: String, request: ByteArray, options: CallOptions): ByteArray
+    fun serverStreaming(method: String, request: ByteArray): Flow<ByteArray>
+    suspend fun clientStreaming(method: String, requests: Flow<ByteArray>, options: CallOptions): ByteArray
+    fun bidiStreaming(method: String, requests: Flow<ByteArray>): Flow<ByteArray>
     fun close()
 }
 
-internal fun interface CoreStreamCall {
-    fun close()
-}
+private class KurpcCoreChannel(private val channel: RpcChannel) : CoreChannel {
+    override suspend fun unary(method: String, request: ByteArray, options: CallOptions): ByteArray =
+        channel.unary(method, request, options)
 
-private class JniCoreBridge(private val client: BridgeClient) : CoreBridge {
-    override fun callWithTimeout(method: String, request: ByteArray, timeoutMs: Int): ByteArray =
-        client.callWithTimeout(method, request, timeoutMs) ?: ByteArray(0)
+    // Waits for the socket like the unary calls: a subscription opened while the host is still
+    // starting should connect, not fail and back off.
+    override fun serverStreaming(method: String, request: ByteArray): Flow<ByteArray> =
+        channel.serverStreaming(method, request, CallOptions(waitForReady = true))
 
-    override fun stream(
+    override suspend fun clientStreaming(
         method: String,
-        request: ByteArray,
-        handler: StreamHandler,
-    ): CoreStreamCall {
-        val call = client.stream(method, request, handler)
-        return CoreStreamCall { call.close() }
-    }
+        requests: Flow<ByteArray>,
+        options: CallOptions,
+    ): ByteArray = channel.clientStreaming(method, requests, options)
 
-    override fun probe() = client.probe()
+    override fun bidiStreaming(method: String, requests: Flow<ByteArray>): Flow<ByteArray> =
+        channel.bidiStreaming(method, requests, CallOptions(waitForReady = true))
 
-    override fun close() = client.close()
+    override fun close() = channel.close()
 }
 
-class BridgeCoreClient private constructor(
-    private val newBridge: () -> CoreBridge,
-    private val retryDelay: Duration,
-    private val maxRetryDelay: Duration,
-    private val stableReset: Duration,
+/**
+ * [CoreClient] over one kurpc [RpcChannel], created on first use by [openChannel].
+ *
+ * The channel reconnects by itself after the host restarts, so a failed call never replaces it.
+ * [close] does: the next call opens a new channel, which re-resolves the endpoint (desktop
+ * switches between the session working dir and the daemon this way).
+ */
+class KurpcCoreClient internal constructor(
+    private val openChannel: () -> CoreChannel,
+    private val retryDelay: Duration = 200.milliseconds,
+    private val maxRetryDelay: Duration = 5.seconds,
+    private val stableReset: Duration = 5.seconds,
 ) : CoreClient {
-    constructor(
-        basePath: String? = null,
-        bridgeFactory: (String?) -> BridgeClient = { path ->
-            Libcore.newBridgeClient(path)
-        },
-        retryDelay: Duration = 200.milliseconds,
-        maxRetryDelay: Duration = 5.seconds,
-        stableReset: Duration = 5.seconds,
-    ) : this(
-        newBridge = { JniCoreBridge(bridgeFactory(basePath)) },
-        retryDelay = retryDelay,
-        maxRetryDelay = maxRetryDelay,
-        stableReset = stableReset,
-    )
-
-    /** Test seam: inject a fake [CoreBridge] instead of the JNI client. */
-    internal constructor(
-        createBridge: (String?) -> CoreBridge,
-        retryDelay: Duration = 200.milliseconds,
-        maxRetryDelay: Duration = 5.seconds,
-        stableReset: Duration = 5.seconds,
-    ) : this(
-        newBridge = { createBridge(null) },
-        retryDelay = retryDelay,
-        maxRetryDelay = maxRetryDelay,
-        stableReset = stableReset,
-    )
-
     private val access = Mutex()
-    private var bridge: CoreBridge? = null
+    private var channel: CoreChannel? = null
 
-    private suspend fun getOrCreateBridge(): CoreBridge {
-        access.withLock {
-            return bridge ?: newBridge().also { bridge = it }
-        }
+    private suspend fun channel(): CoreChannel = access.withLock {
+        channel ?: openChannel().also { channel = it }
     }
 
     /**
-     * Holds the mutex only while getting/creating the shared [CoreBridge].
-     * Invokes [block] outside the lock so long RPCs do not serialize peers.
-     * Resets the bridge only on connection-level failures, not per-call status
-     * errors (DeadlineExceeded, NotFound, InvalidArgument, …).
-     */
-    private suspend fun <T> withBridge(block: suspend (CoreBridge) -> T): T {
-        val client = getOrCreateBridge()
-        try {
-            return block(client)
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: CoreRpcException) {
-            resetIfConnectionFailure(client, e)
-            throw e
-        } catch (e: Exception) {
-            val mapped = mapBridgeError(e)
-            resetIfConnectionFailure(client, mapped)
-            throw mapped
-        }
-    }
-
-    /** Tears down the shared bridge if [e] indicates a connection-level failure. */
-    private suspend fun resetIfConnectionFailure(client: CoreBridge, e: CoreRpcException) {
-        if (!isConnectionFailure(e.code)) return
-        access.withLock {
-            if (bridge === client) resetLocked()
-        }
-    }
-
-    private fun resetLocked() {
-        val current = bridge
-        bridge = null
-        runCatching { current?.close() }
-    }
-
-    /**
-     * Closes the shared [BridgeClient]. In-flight [stream] collectors observe
-     * onClosed, retry, and call [getOrCreateBridge], which invokes the bridge
-     * factory again (re-resolving the socket path on desktop when switching
-     * between the session working dir and the daemon).
+     * In-flight calls on the old channel fail with [ChannelClosedException]; subscriptions
+     * retry on a new one.
      */
     override suspend fun close() {
-        access.withLock { resetLocked() }
+        access.withLock {
+            channel?.close()
+            channel = null
+        }
     }
 
     private suspend fun unary(
         method: String,
         request: ByteArray = EMPTY_PROTO,
         timeout: Duration = DEFAULT_UNARY_TIMEOUT,
-    ): ByteArray {
-        return withBridge { client ->
-            runInterruptible(Dispatchers.IO) {
-                try {
-                    client.callWithTimeout(
-                        method,
-                        request,
-                        timeout.inWholeMilliseconds.toInt(),
-                    )
-                } catch (e: Exception) {
-                    throw mapBridgeError(e)
-                }
-            }
-        }
-    }
+    ): ByteArray = rpc { channel().unary(method, request, CallOptions(timeout = timeout)) }
+
+    private suspend fun clientStream(
+        method: String,
+        requests: Flow<ByteArray>,
+        timeout: Duration,
+    ): ByteArray = rpc { channel().clientStreaming(method, requests, CallOptions(timeout = timeout)) }
 
     /**
-     * Long-lived server stream with retry. Multiplexes on the shared
-     * [BridgeClient] from [getOrCreateBridge]; only the [StreamCall] is
-     * closed between attempts. Connection-level failures reset that shared
-     * bridge. [close] tears it down so in-flight collectors observe onClosed,
-     * retry, and redial — the bridge factory re-resolves the socket path on
-     * each create (session dir vs daemon).
+     * Long-lived server stream. Whenever the stream ends, cleanly or not, it is opened again
+     * after a backoff that resets once a stream has stayed up for [stableReset].
      */
     private fun <T> stream(
         method: String,
         request: ByteArray = EMPTY_PROTO,
         parse: (ByteArray) -> T,
-    ): Flow<T> = callbackFlow {
+    ): Flow<T> = flow {
         var delayDuration = retryDelay
-        var activeCall: CoreStreamCall? = null
-        val job = launch {
-            while (isActive) {
-                val client = try {
-                    getOrCreateBridge()
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (e: Exception) {
-                    Logs.w("core client stream create: $method", e)
-                    delay(delayDuration)
-                    delayDuration = (delayDuration * 2).coerceAtMost(maxRetryDelay)
-                    continue
-                }
-                var call: CoreStreamCall? = null
-                val closed = CompletableDeferred<String?>()
-                val elapsed = measureTime {
-                    try {
-                        val handler = object : StreamHandler {
-                            override fun onMessage(message: ByteArray?) {
-                                // A protobuf message whose fields are all default
-                                // serializes to zero bytes, which the JNI binding
-                                // hands over as null. Dropping it would hide
-                                // "no groups" or "service idle" from the UI.
-                                val parsed = try {
-                                    parse(message ?: EMPTY_PROTO)
-                                } catch (e: Exception) {
-                                    Logs.w("core client stream parse: $method", e)
-                                    return
-                                }
-                                trySend(parsed)
-                            }
-
-                            override fun onClosed(message: String?) {
-                                closed.complete(message)
-                            }
-                        }
-                        call = client.stream(method, request, handler)
-                        activeCall = call
-                        val errMessage = closed.await()
-                        if (!errMessage.isNullOrEmpty()) {
-                            val mapped = mapBridgeError(Exception(errMessage))
-                            // Retrying in silence turns a broken stream into an
-                            // empty panel with nothing to go on.
-                            Logs.w("core client stream closed: $method", mapped)
-                            resetIfConnectionFailure(client, mapped)
-                        }
-                    } catch (e: CancellationException) {
-                        throw e
-                    } catch (e: Exception) {
-                        val mapped = mapBridgeError(e)
-                        resetIfConnectionFailure(client, mapped)
-                        Logs.w("core client stream: $method", e)
-                    } finally {
-                        activeCall = null
-                        runCatching { call?.close() }
-                    }
-                }
-                delayDuration = if (elapsed >= stableReset) {
-                    retryDelay
-                } else {
-                    (delayDuration * 2).coerceAtMost(maxRetryDelay)
-                }
-                if (isActive) {
-                    delay(delayDuration)
-                }
+        while (true) {
+            val opened = TimeSource.Monotonic.markNow()
+            try {
+                emitAll(
+                    channel().serverStreaming(method, request).parseEach(method, parse).catch { error ->
+                        // Retrying in silence turns a broken stream into an empty panel with
+                        // nothing to go on.
+                        Logs.w("core client stream: $method", error.toCoreRpcException())
+                    },
+                )
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // Opening the channel failed (a malformed endpoint); `catch` above takes the rest.
+                Logs.w("core client stream open: $method", e)
             }
-        }
-        awaitClose {
-            job.cancel()
-            runCatching { activeCall?.close() }
+            delayDuration = if (opened.elapsedNow() >= stableReset) {
+                retryDelay
+            } else {
+                (delayDuration * 2).coerceAtMost(maxRetryDelay)
+            }
+            delay(delayDuration)
         }
     }.buffer(Channel.UNLIMITED)
 
@@ -561,6 +540,107 @@ class BridgeCoreClient private constructor(
         )
     }
 
+    override fun subscribeTailscaleStatus(): Flow<TailscaleStatusUpdate> =
+        stream(Methods.SUBSCRIBE_TAILSCALE_STATUS) { TailscaleStatusUpdate.parseFrom(it) }
+
+    override fun tailscalePing(tag: String, ip: String): Flow<TailscalePingResponse> {
+        val request = tailscalePingRequest {
+            endpointTag = tag
+            peerIP = ip
+        }.toByteArray()
+        return oneShotStream(Methods.START_TAILSCALE_PING, request) { TailscalePingResponse.parseFrom(it) }
+    }
+
+    override suspend fun setTailscaleExitNode(tag: String, stableId: String) {
+        unary(
+            Methods.SET_TAILSCALE_EXIT_NODE,
+            setTailscaleExitNodeRequest {
+                endpointTag = tag
+                stableID = stableId
+            }.toByteArray(),
+        )
+    }
+
+    override suspend fun tailscaleLogout(tag: String) {
+        unary(
+            Methods.TAILSCALE_LOGOUT,
+            tailscaleLogoutRequest { endpointTag = tag }.toByteArray(),
+        )
+    }
+
+    override suspend fun getTailscaleCertificate(
+        tag: String,
+        domain: String,
+        minValiditySeconds: Long,
+    ): TailscaleCertificate {
+        val response = unary(
+            Methods.GET_TAILSCALE_CERTIFICATE,
+            tailscaleCertificateRequest {
+                endpointTag = tag
+                this.domain = domain
+                this.minValiditySeconds = minValiditySeconds
+            }.toByteArray(),
+        )
+        return TailscaleCertificate.parseFrom(response)
+    }
+
+    override fun subscribeTaildropInbox(tag: String): Flow<TaildropInbox> {
+        val request = subscribeTaildropInboxRequest { endpointTag = tag }.toByteArray()
+        return stream(Methods.SUBSCRIBE_TAILDROP_INBOX, request) { TaildropInbox.parseFrom(it) }
+    }
+
+    override suspend fun markTaildropInboxRead(tag: String) {
+        unary(
+            Methods.MARK_TAILDROP_INBOX_READ,
+            markTaildropInboxReadRequest { endpointTag = tag }.toByteArray(),
+        )
+    }
+
+    override suspend fun deleteTaildropFile(tag: String, name: String) {
+        unary(
+            Methods.DELETE_TAILDROP_FILE,
+            deleteTaildropFileRequest {
+                endpointTag = tag
+                this.name = name
+            }.toByteArray(),
+        )
+    }
+
+    override suspend fun cancelTaildropReceiving(tag: String, senderId: String, name: String) {
+        unary(
+            Methods.CANCEL_TAILDROP_RECEIVING,
+            cancelTaildropReceivingRequest {
+                endpointTag = tag
+                senderID = senderId
+                this.name = name
+            }.toByteArray(),
+        )
+    }
+
+    override fun downloadTaildropFile(tag: String, name: String): Flow<DownloadTaildropFileChunk> {
+        val request = downloadTaildropFileRequest {
+            endpointTag = tag
+            this.name = name
+        }.toByteArray()
+        return oneShotStream(Methods.DOWNLOAD_TAILDROP_FILE, request) {
+            DownloadTaildropFileChunk.parseFrom(it)
+        }
+    }
+
+    override fun sendTaildropFiles(
+        requests: Flow<TaildropSendClientMessage>,
+    ): Flow<TaildropSendServerMessage> = bidiStream(
+        Methods.SEND_TAILDROP_FILES,
+        requests.map { it.toByteArray() },
+    ) { TaildropSendServerMessage.parseFrom(it) }
+
+    override fun startTailscaleSSHSession(
+        requests: Flow<TailscaleSSHClientMessage>,
+    ): Flow<TailscaleSSHServerMessage> = bidiStream(
+        Methods.START_TAILSCALE_SSH_SESSION,
+        requests.map { it.toByteArray() },
+    ) { TailscaleSSHServerMessage.parseFrom(it) }
+
     override suspend fun getVersion(): GetVersionResponse {
         return GetVersionResponse.parseFrom(
             unary(Methods.HUSI_GET_VERSION, getVersionRequest { }.toByteArray()),
@@ -631,6 +711,14 @@ class BridgeCoreClient private constructor(
         )
     }
 
+    override suspend fun formatConfig(config: String): String {
+        val bytes = unary(
+            Methods.FORMAT_CONFIG,
+            formatConfigRequest { this.config = config }.toByteArray(),
+        )
+        return FormatConfigResponse.parseFrom(bytes).config
+    }
+
     override suspend fun generateSchema(kind: SchemaKind): String {
         val bytes = unary(
             Methods.GENERATE_SCHEMA,
@@ -657,6 +745,73 @@ class BridgeCoreClient private constructor(
             30.seconds,
         )
         return GetCertResponse.parseFrom(bytes).pem
+    }
+
+    override suspend fun webdavList(request: WebDAVListRequest): WebDAVListResponse {
+        val bytes = unary(Methods.WEBDAV_LIST, request.toByteArray(), WEBDAV_TIMEOUT)
+        return WebDAVListResponse.parseFrom(bytes)
+    }
+
+    override suspend fun webdavUpload(requests: Flow<WebDAVUploadRequest>) {
+        clientStream(Methods.WEBDAV_UPLOAD, requests.map { it.toByteArray() }, WEBDAV_TIMEOUT)
+    }
+
+    // A server stream carries no deadline of its own, so the download sets the upload's.
+    override fun webdavDownload(request: WebDAVDownloadRequest): Flow<WebDAVDownloadResponse> = flow {
+        withTimeout(WEBDAV_TIMEOUT) {
+            emitAll(
+                oneShotStream(Methods.WEBDAV_DOWNLOAD, request.toByteArray()) {
+                    WebDAVDownloadResponse.parseFrom(it)
+                },
+            )
+        }
+    }
+
+    override suspend fun webdavDelete(request: WebDAVDeleteRequest) {
+        unary(Methods.WEBDAV_DELETE, request.toByteArray(), WEBDAV_TIMEOUT)
+    }
+
+    override suspend fun ping(protocol: PingProtocol, address: String, port: Int, timeoutMs: Int): Int {
+        val bytes = unary(
+            Methods.PING,
+            pingRequest {
+                this.protocol = protocol
+                this.address = address
+                this.port = port
+                this.timeoutMs = timeoutMs
+            }.toByteArray(),
+            timeoutMs.milliseconds + DEFAULT_UNARY_TIMEOUT,
+        )
+        return PingResponse.parseFrom(bytes).latencyMs
+    }
+
+    override suspend fun matchRuleSets(dir: File, keyword: String): List<String> {
+        val bytes = unary(
+            Methods.MATCH_RULE_SETS,
+            matchRuleSetsRequest {
+                directory = dir.invariantPathString()
+                this.keyword = keyword
+            }.toByteArray(),
+            30.seconds,
+        )
+        return MatchRuleSetsResponse.parseFrom(bytes).namesList
+    }
+
+    override suspend fun getRootCertificates(store: RootCertificateStore): String {
+        val bytes = unary(
+            Methods.GET_ROOT_CERTIFICATES,
+            getRootCertificatesRequest { this.store = store }.toByteArray(),
+        )
+        return GetRootCertificatesResponse.parseFrom(bytes).pem
+    }
+
+    override suspend fun readAndroidVPNType(apkPaths: List<String>): AndroidVPNType? {
+        val bytes = unary(
+            Methods.READ_ANDROID_VPN_TYPE,
+            readAndroidVPNTypeRequest { this.apkPaths.addAll(apkPaths) }.toByteArray(),
+        )
+        val response = ReadAndroidVPNTypeResponse.parseFrom(bytes)
+        return if (response.hasType()) response.type else null
     }
 
     override fun stunTest(server: String, outboundTag: String): Flow<STUNTestProgress> {
@@ -719,6 +874,9 @@ class BridgeCoreClient private constructor(
         }
     }
 
+    override fun httpFetch(request: HTTPFetchRequest): Flow<HTTPFetchResponse> =
+        oneShotStream(Methods.HTTP_FETCH, request.toByteArray()) { HTTPFetchResponse.parseFrom(it) }
+
     /**
      * Server-streaming RPC that ends when the host closes the stream (tool
      * RPCs, not long-lived subscriptions). Does not auto-retry.
@@ -727,56 +885,25 @@ class BridgeCoreClient private constructor(
         method: String,
         request: ByteArray,
         parse: (ByteArray) -> T,
-    ): Flow<T> = callbackFlow {
-        var call: CoreStreamCall? = null
-        var client: CoreBridge? = null
-        try {
-            val bridge = getOrCreateBridge()
-            client = bridge
-            val closed = CompletableDeferred<String?>()
-            val handler = object : StreamHandler {
-                override fun onMessage(message: ByteArray?) {
-                    // null is an all-default message; see [stream].
-                    val parsed = try {
-                        parse(message ?: EMPTY_PROTO)
-                    } catch (e: Exception) {
-                        Logs.w("core client one-shot parse: $method", e)
-                        return
-                    }
-                    trySend(parsed)
-                }
+    ): Flow<T> = flow {
+        emitAll(
+            channel().serverStreaming(method, request)
+                .parseEach(method, parse)
+                .catch { error -> throw error.toCoreRpcException() },
+        )
+    }.buffer(Channel.UNLIMITED)
 
-                override fun onClosed(message: String?) {
-                    closed.complete(message)
-                }
-            }
-            call = runInterruptible(Dispatchers.IO) {
-                try {
-                    bridge.stream(method, request, handler)
-                } catch (e: Exception) {
-                    throw mapBridgeError(e)
-                }
-            }
-            val errMessage = closed.await()
-            if (!errMessage.isNullOrEmpty()) {
-                throw mapBridgeError(Exception(errMessage))
-            }
-            close()
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: CoreRpcException) {
-            client?.let { resetIfConnectionFailure(it, e) }
-            close(e)
-        } catch (e: Exception) {
-            val mapped = mapBridgeError(e)
-            client?.let { resetIfConnectionFailure(it, mapped) }
-            close(mapped)
-        } finally {
-            runCatching { call?.close() }
-        }
-        awaitClose {
-            runCatching { call?.close() }
-        }
+    /** Bidirectional stream that ends when the host closes it. Does not auto-retry. */
+    private fun <T> bidiStream(
+        method: String,
+        requests: Flow<ByteArray>,
+        parse: (ByteArray) -> T,
+    ): Flow<T> = flow {
+        emitAll(
+            channel().bidiStreaming(method, requests)
+                .parseEach(method, parse)
+                .catch { error -> throw error.toCoreRpcException() },
+        )
     }.buffer(Channel.UNLIMITED)
 
     override suspend fun resetNetwork() {
@@ -828,19 +955,20 @@ class BridgeCoreClient private constructor(
         )
     }
 
+    /** gRPC health check; any status but SERVING is a failure. */
     override suspend fun probe() {
-        withBridge { client ->
-            runInterruptible(Dispatchers.IO) {
-                try {
-                    client.probe()
-                } catch (e: Exception) {
-                    throw mapBridgeError(e)
-                }
-            }
+        val response = rpc {
+            // Not wait-for-ready: a probe answers whether a host is there now.
+            channel().unary(Methods.HEALTH_CHECK, EMPTY_PROTO, CallOptions(timeout = DEFAULT_UNARY_TIMEOUT, waitForReady = false))
+        }
+        val status = healthCheckStatus(response)
+        if (status != HEALTH_SERVING) {
+            throw CoreRpcException(RpcStatus.Code.UNAVAILABLE, "health status: $status")
         }
     }
 
     private object Methods {
+        const val HEALTH_CHECK = "/grpc.health.v1.Health/Check"
         const val GET_VERSION = "/daemon.StartedService/GetVersion"
         const val GET_STARTED_AT = "/daemon.StartedService/GetStartedAt"
         const val DAEMON_URL_TEST = "/daemon.StartedService/URLTest"
@@ -870,6 +998,18 @@ class BridgeCoreClient private constructor(
         const val SUBMIT_OPENVPN_CHALLENGE_RESPONSE =
             "/daemon.StartedService/SubmitOpenVPNChallengeResponse"
         const val CANCEL_OPENVPN_CHALLENGE = "/daemon.StartedService/CancelOpenVPNChallenge"
+        const val SUBSCRIBE_TAILSCALE_STATUS = "/daemon.StartedService/SubscribeTailscaleStatus"
+        const val START_TAILSCALE_PING = "/daemon.StartedService/StartTailscalePing"
+        const val SET_TAILSCALE_EXIT_NODE = "/daemon.StartedService/SetTailscaleExitNode"
+        const val TAILSCALE_LOGOUT = "/daemon.StartedService/TailscaleLogout"
+        const val GET_TAILSCALE_CERTIFICATE = "/daemon.StartedService/GetTailscaleCertificate"
+        const val START_TAILSCALE_SSH_SESSION = "/daemon.StartedService/StartTailscaleSSHSession"
+        const val SUBSCRIBE_TAILDROP_INBOX = "/daemon.StartedService/SubscribeTaildropInbox"
+        const val MARK_TAILDROP_INBOX_READ = "/daemon.StartedService/MarkTaildropInboxRead"
+        const val SEND_TAILDROP_FILES = "/daemon.StartedService/SendTaildropFiles"
+        const val DOWNLOAD_TAILDROP_FILE = "/daemon.StartedService/DownloadTaildropFile"
+        const val DELETE_TAILDROP_FILE = "/daemon.StartedService/DeleteTaildropFile"
+        const val CANCEL_TAILDROP_RECEIVING = "/daemon.StartedService/CancelTaildropReceiving"
 
         const val HUSI_GET_VERSION = "/husi.v1.CoreService/GetVersion"
         const val HUSI_URL_TEST = "/husi.v1.CoreService/URLTest"
@@ -877,6 +1017,7 @@ class BridgeCoreClient private constructor(
         const val SUBSCRIBE_SERVICE_EVENTS = "/husi.v1.CoreService/SubscribeServiceEvents"
 
         const val CHECK_CONFIG = "/husi.v1.ApplicationService/CheckConfig"
+        const val FORMAT_CONFIG = "/husi.v1.ApplicationService/FormatConfig"
         const val GENERATE_SCHEMA = "/husi.v1.ApplicationService/GenerateSchema"
         const val STANDALONE_URL_TEST = "/husi.v1.ApplicationService/StandaloneURLTest"
         const val GET_CERT = "/husi.v1.ApplicationService/GetCert"
@@ -884,6 +1025,15 @@ class BridgeCoreClient private constructor(
         const val SPEED_TEST_RUN = "/husi.v1.ApplicationService/SpeedTestRun"
         const val STANDALONE_NETWORK_QUALITY_TEST =
             "/husi.v1.ApplicationService/StandaloneNetworkQualityTest"
+        const val HTTP_FETCH = "/husi.v1.ApplicationService/HTTPFetch"
+        const val WEBDAV_LIST = "/husi.v1.ApplicationService/WebDAVList"
+        const val WEBDAV_UPLOAD = "/husi.v1.ApplicationService/WebDAVUpload"
+        const val WEBDAV_DOWNLOAD = "/husi.v1.ApplicationService/WebDAVDownload"
+        const val WEBDAV_DELETE = "/husi.v1.ApplicationService/WebDAVDelete"
+        const val PING = "/husi.v1.ApplicationService/Ping"
+        const val MATCH_RULE_SETS = "/husi.v1.ApplicationService/MatchRuleSets"
+        const val GET_ROOT_CERTIFICATES = "/husi.v1.ApplicationService/GetRootCertificates"
+        const val READ_ANDROID_VPN_TYPE = "/husi.v1.ApplicationService/ReadAndroidVPNType"
 
         const val RUN_TASK = "/husi.v1.AppService/RunTask"
 
@@ -899,6 +1049,7 @@ class BridgeCoreClient private constructor(
 
     companion object {
         private val DEFAULT_UNARY_TIMEOUT = 10.seconds
+        private val WEBDAV_TIMEOUT = 2.minutes
 
         /**
          * Longer than [DEFAULT_UNARY_TIMEOUT]: take-over blocks on a human
@@ -910,63 +1061,55 @@ class BridgeCoreClient private constructor(
         /** google.protobuf.Empty serializes to zero bytes. */
         private val EMPTY_PROTO = ByteArray(0)
 
-        /**
-         * Codes that indicate the shared bridge is unusable and should be redialed.
-         * Per-call status errors (NotFound, DeadlineExceeded, InvalidArgument, …)
-         * intentionally do not tear down the connection.
-         */
-        private val CONNECTION_FAILURE_CODES = setOf(
-            "Unavailable",
-            "UNAVAILABLE",
-        )
+        /** `grpc.health.v1.HealthCheckResponse.ServingStatus.SERVING`. */
+        private const val HEALTH_SERVING = 1
 
-        private fun isConnectionFailure(code: String): Boolean =
-            code in CONNECTION_FAILURE_CODES
+        /** Local core at [basePath] (see [localCoreTransport]), resolved again on every [close]. */
+        fun local(basePath: () -> String): KurpcCoreClient =
+            KurpcCoreClient(openChannel = { KurpcCoreChannel(RpcChannel(ChannelConfig(localCoreTransport(basePath())))) })
 
         /**
-         * Bridge errors are formatted by [libcore.BridgeClient] as
-         * `"<Code>: <message>"` when the failure is a gRPC status (see bridge.go).
-         * Transport failures without a status keep their original message and
-         * map to code `"Unknown"`.
+         * A remote sing-box daemon, as `daemon.NewRemoteClient` dials it. [trust] gives the TLS
+         * roots on every dial; see [rootCertificatesSocketFactory].
          */
-        private fun mapBridgeError(e: Exception): CoreRpcException {
-            if (e is CoreRpcException) return e
-            val message = e.message ?: e.toString()
-            val separator = message.indexOf(": ")
-            if (separator > 0) {
-                val maybeCode = message.substring(0, separator)
-                if (maybeCode in KNOWN_GRPC_CODES) {
-                    return CoreRpcException(
-                        maybeCode,
-                        message.substring(separator + 2).ifEmpty { message },
-                        e,
-                    )
-                }
-            }
-            return CoreRpcException("Unknown", message, e)
-        }
-
-        private val KNOWN_GRPC_CODES = setOf(
-            "OK",
-            "Canceled",
-            "Unknown",
-            "InvalidArgument",
-            "DeadlineExceeded",
-            "NotFound",
-            "AlreadyExists",
-            "PermissionDenied",
-            "ResourceExhausted",
-            "FailedPrecondition",
-            "Aborted",
-            "OutOfRange",
-            "Unimplemented",
-            "Internal",
-            "Unavailable",
-            "DataLoss",
-            "Unauthenticated",
-        )
+        fun remote(serverUrl: String, secret: String, trust: () -> SSLSocketFactory): KurpcCoreClient =
+            KurpcCoreClient(
+                openChannel = {
+                    KurpcCoreChannel(RpcChannel(remoteCoreChannelConfig(serverUrl, secret, trust)))
+                },
+            )
     }
 }
+
+/** Runs one call, reporting every kurpc failure as a [CoreRpcException]. */
+private suspend fun <T> rpc(call: suspend () -> T): T = try {
+    call()
+} catch (e: CancellationException) {
+    throw e
+} catch (e: Exception) {
+    throw e.toCoreRpcException()
+}
+
+internal fun Throwable.toCoreRpcException(): CoreRpcException = when (this) {
+    is CoreRpcException -> this
+    is StatusException -> CoreRpcException(code, description, this)
+    // No status from a server: it was never reached or went away, as grpc-go reports it.
+    is TransportException, is ChannelClosedException ->
+        CoreRpcException(RpcStatus.Code.UNAVAILABLE, message ?: toString(), this)
+    else -> CoreRpcException(RpcStatus.Code.UNKNOWN, message ?: toString(), this)
+}
+
+/** Parses each message; one that does not parse is logged and skipped, not fatal. */
+private fun <T> Flow<ByteArray>.parseEach(method: String, parse: (ByteArray) -> T): Flow<T> =
+    transform { message ->
+        val parsed = try {
+            parse(message)
+        } catch (e: Exception) {
+            Logs.w("core client parse: $method", e)
+            return@transform
+        }
+        emit(parsed)
+    }
 
 /** Build URLTestOptions from DataStore-style flags. */
 fun urlTestOptions(unifiedDelay: Boolean, ignoreHandshakeTime: Boolean): URLTestOptions {

@@ -11,7 +11,6 @@ import com.fr.husi.ktx.Logs
 import com.fr.husi.proto.v1.clientMetadata
 import com.fr.husi.proto.v1.startServiceRequest
 import com.fr.husi.repository.resolveAndroidRepository
-import com.fr.husi.repository.resolveRepository
 import java.io.File
 
 abstract class BoxInstance(
@@ -25,7 +24,6 @@ abstract class BoxInstance(
     val pluginConfigs = hashMapOf<Int, Pair<Int, String>>()
     private val externalInstances = hashMapOf<Int, AbstractInstance>()
     private var cacheFiles = ArrayList<File>()
-    private var isVPN: Boolean = false
 
     /**
      * Config has been built. The box instance itself is only created at
@@ -40,13 +38,12 @@ abstract class BoxInstance(
         return buildConfig(profile)
     }
 
-    open suspend fun init(isVPN: Boolean) {
-        this.isVPN = isVPN
+    open suspend fun init() {
         val result = buildConfig()
         metadata = result.metadata
         pendingConfigJson = result.configJson
         // Fail fast on missing plugins before the foreground service escalates.
-        pluginConfigs.putAll(initPlugins(metadata, isVPN, cacheFiles))
+        pluginConfigs.putAll(initPlugins(metadata, cacheFiles))
     }
 
     override fun launch() {
@@ -57,7 +54,7 @@ abstract class BoxInstance(
                 }
             }
         }
-        val specs = buildPluginSpecs(metadata, pluginConfigs, isVPN)
+        val specs = buildPluginSpecs(metadata, pluginConfigs)
         val configJson = checkNotNull(pendingConfigJson) { "instance already launched" }
         pendingConfigJson = null
         val request = startServiceRequest {
@@ -71,7 +68,7 @@ abstract class BoxInstance(
         // Match the Kotlin pool's working dir: keep plugin files out of backup.
         val pluginDir = resolveAndroidRepository().noBackupFilesDir.resolve("plugin")
         pluginDir.mkdirs()
-        resolveRepository().boxService!!.startService(
+        resolveAndroidRepository().boxService!!.startService(
             request.toByteArray(),
             pluginDir.absolutePath,
         )
@@ -91,7 +88,7 @@ abstract class BoxInstance(
         // A core that cannot close ends this process itself, so there is nothing
         // to recover from here.
         runCatching {
-            resolveRepository().boxService?.stopService()
+            resolveAndroidRepository().boxService?.stopService()
         }.onFailure {
             Logs.w(it)
         }

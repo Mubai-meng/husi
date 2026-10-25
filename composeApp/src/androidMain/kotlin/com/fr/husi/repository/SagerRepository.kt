@@ -17,14 +17,19 @@ import androidx.core.content.ContextCompat
 import androidx.core.content.getSystemService
 import com.fr.husi.Action
 import com.fr.husi.bg.SagerConnection
+import com.fr.husi.bg.TAILSCALE_NOTIFICATION_CHANNEL_ID
+import com.fr.husi.libcore.Service
 import com.fr.husi.libcore.createBoxService
 import com.fr.husi.resources.Res
 import com.fr.husi.resources.openconnect_authentication
 import com.fr.husi.resources.openvpn_authentication
 import com.fr.husi.resources.service_proxy
 import com.fr.husi.resources.service_subscription
+import com.fr.husi.resources.service_tailscale
 import com.fr.husi.resources.service_vpn
 import com.fr.husi.resources.service_vpn_request
+import com.fr.husi.resources.taildrop_sending
+import com.fr.husi.tailscale.TaildropSendService
 import com.fr.husi.ui.MainActivity
 import org.jetbrains.compose.resources.ExperimentalResourceApi
 import org.jetbrains.compose.resources.setResourceReaderAndroidContext
@@ -42,7 +47,7 @@ open class SagerRepository(
         setResourceReaderAndroidContext(context)
     }
 
-    override val boxService: com.fr.husi.libcore.Service? by lazy {
+    override val boxService: Service? by lazy {
         createBoxService(isBgProcess)
     }
 
@@ -142,12 +147,12 @@ open class SagerRepository(
                 "service-vpn",
                 getString(Res.string.service_vpn),
                 importanceVpn,
-            ),
+            ).also { it.setShowBadge(false) },
             NotificationChannel(
                 "service-proxy",
                 getString(Res.string.service_proxy),
                 NotificationManager.IMPORTANCE_LOW,
-            ),
+            ).also { it.setShowBadge(false) },
             NotificationChannel(
                 "service-vpn-request",
                 getString(Res.string.service_vpn_request),
@@ -168,6 +173,16 @@ open class SagerRepository(
                 getString(Res.string.openvpn_authentication),
                 NotificationManager.IMPORTANCE_HIGH,
             ),
+            NotificationChannel(
+                TAILSCALE_NOTIFICATION_CHANNEL_ID,
+                getString(Res.string.service_tailscale),
+                NotificationManager.IMPORTANCE_DEFAULT,
+            ),
+            NotificationChannel(
+                TaildropSendService.CHANNEL_ID,
+                getString(Res.string.taildrop_sending),
+                NotificationManager.IMPORTANCE_LOW,
+            ).also { it.setShowBadge(false) },
         )
         notification.createNotificationChannels(channels)
     }

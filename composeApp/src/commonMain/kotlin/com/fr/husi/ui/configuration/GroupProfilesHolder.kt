@@ -86,6 +86,7 @@ import com.fr.husi.keyevent.isTypeControlPressed
 import com.fr.husi.ktx.Logs
 import com.fr.husi.ktx.blankAsNull
 import com.fr.husi.ktx.blurAddress
+import com.fr.husi.ktx.formatBytes
 import com.fr.husi.ktx.readableMessage
 import com.fr.husi.ktx.readableUrlTestError
 import com.fr.husi.resources.Res
@@ -482,8 +483,8 @@ private fun DraggableSwipeableItemScope<ProfileItem>.ProxyCard(
     }
 
     val hasTraffic = entity.tx + entity.rx > 0L
-    // 流量文本与安全校验已在 ViewModel 后台线程预计算（formatBytes 走
-    // JNI、isInsecure 有校验开销，组合期逐卡执行会掉帧）。
+    // 流量文本与安全校验已在 ViewModel 后台线程预计算（formatBytes 有格式化
+    // 开销、isInsecure 有校验开销，组合期逐卡执行会掉帧）。
     val trafficText = profile.trafficFormatted?.takeIf { hasTraffic }?.let { (tx, rx) ->
         stringResource(Res.string.traffic, tx, rx)
     }

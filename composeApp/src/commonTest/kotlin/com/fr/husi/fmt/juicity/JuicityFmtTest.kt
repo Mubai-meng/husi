@@ -4,6 +4,7 @@ import com.fr.husi.database.DataStore
 import com.fr.husi.fmt.FmtTestConstant
 import com.fr.husi.fmt.LOCALHOST4
 import com.fr.husi.fmt.SingBoxOptions
+import com.fr.husi.ktx.applyDefaultValues
 import com.fr.husi.ktx.toJsonMapKxs
 import com.fr.husi.test.HusiKoinTest
 import kotlin.test.Test
@@ -29,6 +30,7 @@ class JuicityFmtTest : HusiKoinTest() {
         assertEquals("uuid", bean.uuid)
         assertEquals("password", bean.password)
         assertEquals("sni.example.com", bean.sni)
+        assertEquals(true, bean.allowInsecure)
         assertEquals("sha256value", bean.pinSHA256)
     }
 
@@ -37,6 +39,7 @@ class JuicityFmtTest : HusiKoinTest() {
         val bean = parseJuicity(FmtTestConstant.JUICITY_DEFAULT_PORT_URL)
 
         assertEquals(443, bean.serverPort)
+        assertEquals(false, bean.allowInsecure)
     }
 
     @Test
@@ -58,6 +61,7 @@ class JuicityFmtTest : HusiKoinTest() {
         assertEquals(source.uuid, parsed.uuid)
         assertEquals(source.password, parsed.password)
         assertEquals(source.sni, parsed.sni)
+        assertEquals(source.allowInsecure, parsed.allowInsecure)
         assertEquals(source.pinSHA256, parsed.pinSHA256)
     }
 
@@ -73,7 +77,7 @@ class JuicityFmtTest : HusiKoinTest() {
             sni = "sni.example.com"
             allowInsecure = true
             pinSHA256 = "sha256hash"
-        }
+        }.applyDefaultValues()
 
         val config = bean.buildJuicityConfig(port = 2080, shouldProtect = false).toJsonMapKxs()
 
@@ -100,11 +104,12 @@ class JuicityFmtTest : HusiKoinTest() {
             sni = ""
             allowInsecure = false
             pinSHA256 = ""
-        }
+        }.applyDefaultValues()
 
         val config = bean.buildJuicityConfig(port = 2080, shouldProtect = false).toJsonMapKxs()
 
-        assertFalse("sni" in config)
+        // Juicity may dial a loopback mapping inbound, so a blank SNI names the server.
+        assertEquals("example.com", config["sni"])
         assertFalse("allow_insecure" in config)
         assertFalse("pinned_certchain_sha256" in config)
         assertFalse("protect_path" in config)
@@ -142,7 +147,7 @@ class JuicityFmtTest : HusiKoinTest() {
             serverPort = 8443
             uuid = "uuid"
             password = "pass"
-        }
+        }.applyDefaultValues()
 
         val config = bean.buildJuicityConfig(port = 2080, shouldProtect = false).toJsonMapKxs()
 

@@ -26,6 +26,9 @@ MAINTAINER_PLACEHOLDER="__HUSI_MAINTAINER__"
 URL_SCHEME_MIME_TYPES_PLACEHOLDER="__HUSI_URL_SCHEME_MIME_TYPES__"
 RELEASE_DATE_PLACEHOLDER="__HUSI_RELEASE_DATE__"
 CORE_PATH_PLACEHOLDER="__HUSI_CORE_PATH__"
+CORE_PATH_REGEX_PLACEHOLDER="__HUSI_CORE_PATH_REGEX__"
+# husi-core loads Cronet from its own directory, so the library travels with it.
+CORE_LIBRARY_NAME="libcronet.so"
 TAG_NAME=""
 TAG_EPOCH=""
 
@@ -40,7 +43,7 @@ error() {
 usage() {
     cat <<EOF
 Usage:
-  $(basename "$0") [--formats deb,rpm,pacman,tarball,appimage] [--target <platform/arch>] [--input-jar <file>] [--launcher-bin <file>] [--core-bin <file>] [--core-lib <file>] [--output-dir <dir>] [--pkgrel <n>] [--jdk-jmods <dir>] [--appimage-runtime <file>] [--appimage-update-info <string>] [--strip-objcopy <file>]
+  $(basename "$0") [--formats deb,rpm,pacman,tarball,appimage] [--target <platform/arch>] [--input-jar <file>] [--launcher-bin <file>] [--core-bin <file>] [--output-dir <dir>] [--pkgrel <n>] [--jbr-jmods <dir>] [--appimage-runtime <file>] [--appimage-update-info <string>] [--strip-objcopy <file>]
   $(basename "$0") --check-tools [--formats deb,rpm,pacman,tarball,appimage]
 
 Description:
@@ -53,13 +56,12 @@ Defaults:
   --input-jar  newest matching jar under $JAR_DIR_DEFAULT
   --launcher-bin  $ROOT_DIR/launcher/zig-out/bin/launcher-linux-<x86_64|aarch64>
   --core-bin   $ROOT_DIR/libcore/build/linux_<amd64|arm64>/husi-core
-  --core-lib   $ROOT_DIR/libcore/build/linux_<amd64|arm64>/libhusicore.so
+               ($CORE_LIBRARY_NAME is taken from the same directory)
   --output-dir $OUTPUT_DIR_DEFAULT
   --pkgrel     1
-  --jdk-jmods  \$JAVA_HOME/jmods, or the jmods beside jlink (env: JLINK_JMODS).
-               Only needed for the AppImage, and required when the target
-               architecture differs from the host: jlink then needs that
-               architecture's JDK modules.
+  --jbr-jmods  JetBrains Runtime modules for the target architecture
+               (env: JBR_JMODS). Only read for the AppImage; left out, they
+               are fetched with ./run lib jbr linux/<arch>.
   --appimage-runtime
                AppImage runtime binary for the target architecture
                (env: APPIMAGE_RUNTIME). Left out, appimagetool picks its own.
@@ -194,6 +196,8 @@ load_metadata() {
     METAINFO_RELATIVE_PATH="usr/share/metainfo/$PACKAGE_NAME.metainfo.xml"
     POLKIT_ACTION_RELATIVE_PATH="usr/share/polkit-1/actions/$PACKAGE_NAME.policy"
     DAEMON_POLKIT_ACTION_RELATIVE_PATH="usr/share/polkit-1/actions/husi-daemon.policy"
+    SELINUX_MODULE_RELATIVE_PATH="usr/share/selinux/packages/husi.cil"
+    CORE_INSTALL_PATH="/usr/lib/$PACKAGE_NAME/bin/husi-core"
 }
 
 resolve_tag_epoch() {
@@ -415,28 +419,15 @@ resolve_core_bin() {
     exit 1
 }
 
-resolve_core_lib() {
-    local requested="$1"
-    local default_path="$ROOT_DIR/libcore/build/${TARGET_PLATFORM}_${TARGET_ARCH}/libhusicore.so"
-
-    if [[ -n "$requested" ]]; then
-        if [[ ! -f "$requested" ]]; then
-            error "Core native library not found: $requested"
-            exit 1
-        fi
-        INPUT_CORE_LIB="$requested"
-        return
+resolve_core_library() {
+    INPUT_CORE_LIBRARY="$(dirname "$INPUT_CORE_BIN")/$CORE_LIBRARY_NAME"
+    if [[ ! -f "$INPUT_CORE_LIBRARY" ]]; then
+        error "$CORE_LIBRARY_NAME not found beside the core host binary: $INPUT_CORE_LIBRARY"
+        error "make core_desktop puts it there."
+        exit 1
     fi
-
-    if [[ -f "$default_path" ]]; then
-        INPUT_CORE_LIB="$default_path"
-        return
-    fi
-
-    error "Core native library not found: $default_path"
-    error "Build one first: make libcore_desktop DESKTOP_TARGETS=${TARGET_PLATFORM}/${TARGET_ARCH}"
-    exit 1
 }
+
 
 prepare_rootfs() {
     local rootfs="$1"
@@ -451,28 +442,29 @@ prepare_rootfs() {
     local polkit_action_template="$ROOT_DIR/release/linux/desktop/husi.policy"
     local daemon_polkit_action_source="$ROOT_DIR/libcore/daemonhost/husi-daemon.policy"
     local main_launcher="$bin_dir/$PACKAGE_NAME"
-    local core_path="/usr/lib/$PACKAGE_NAME/bin/husi-core"
+    local selinux_module_template="$ROOT_DIR/release/linux/desktop/husi.cil"
+    local core_path="$CORE_INSTALL_PATH"
     local desktop_entry_path="$rootfs/usr/share/applications/$PACKAGE_NAME.desktop"
     local metainfo_path="$rootfs/$METAINFO_RELATIVE_PATH"
     local daemon_unit_path="$rootfs/etc/systemd/system/husi-daemon.service"
     local polkit_action_path="$rootfs/$POLKIT_ACTION_RELATIVE_PATH"
     local daemon_polkit_action_path="$rootfs/$DAEMON_POLKIT_ACTION_RELATIVE_PATH"
+    local selinux_module_path="$rootfs/$SELINUX_MODULE_RELATIVE_PATH"
     local startup_wm_class="${PACKAGE_NAME//./-}-DesktopMainKt"
 
-    if [[ ! -f "$java_opts_template" || ! -f "$app_args_template" || ! -f "$desktop_entry_template" || ! -f "$metainfo_template" || ! -f "$daemon_unit_template" || ! -f "$polkit_action_template" || ! -f "$daemon_polkit_action_source" ]]; then
+    if [[ ! -f "$java_opts_template" || ! -f "$app_args_template" || ! -f "$desktop_entry_template" || ! -f "$metainfo_template" || ! -f "$daemon_unit_template" || ! -f "$polkit_action_template" || ! -f "$daemon_polkit_action_source" || ! -f "$selinux_module_template" ]]; then
         error "Missing launcher templates under release/linux/desktop"
         exit 1
     fi
 
-    mkdir -p "$bin_dir" "$app_dir" "$rootfs/usr/share/applications" "$rootfs/usr/share/metainfo" "$rootfs/usr/share/pixmaps" "$rootfs/etc/systemd/system" "$rootfs/usr/lib/sysusers.d" "$(dirname "$polkit_action_path")"
+    mkdir -p "$bin_dir" "$app_dir" "$rootfs/usr/share/applications" "$rootfs/usr/share/metainfo" "$rootfs/usr/share/pixmaps" "$rootfs/etc/systemd/system" "$rootfs/usr/lib/sysusers.d" "$(dirname "$polkit_action_path")" "$(dirname "$selinux_module_path")"
     cp "$INPUT_JAR" "$app_dir/$PACKAGE_NAME.jar"
     cp "$INPUT_LAUNCHER_BIN" "$main_launcher"
     chmod 755 "$main_launcher"
     cp "$INPUT_CORE_BIN" "$bin_dir/husi-core"
     chmod 755 "$bin_dir/husi-core"
-    # Sidecar anja library next to husi-core (N7); UI sets anja.natives.dir to this dir.
-    cp "$INPUT_CORE_LIB" "$bin_dir/libhusicore.so"
-    chmod 755 "$bin_dir/libhusicore.so"
+    cp "$INPUT_CORE_LIBRARY" "$bin_dir/$CORE_LIBRARY_NAME"
+    chmod 644 "$bin_dir/$CORE_LIBRARY_NAME"
 
     cp "$java_opts_template" "$bin_dir/desktop-java-opts.conf.template"
     cp "$app_args_template" "$bin_dir/desktop-app-args.conf.template"
@@ -545,6 +537,13 @@ prepare_rootfs() {
     # distributions whose package manager does not pick sysusers.d up itself.
     cp "$ROOT_DIR/release/linux/desktop/husi-sysusers.conf" "$rootfs/usr/lib/sysusers.d/husi.conf"
 
+    # Packages only, like the unit: postinstall.sh loads it on SELinux systems.
+    # filecon takes a regular expression, so the dots in the path are escaped.
+    render_template \
+        "$selinux_module_template" \
+        "$selinux_module_path" \
+        "$CORE_PATH_REGEX_PLACEHOLDER" "${core_path//./\\.}"
+
     local icon_source="$ROOT_DIR/release/linux/desktop/icon.png"
     if [[ -f "$icon_source" ]]; then
         cp "$icon_source" "$rootfs/usr/share/pixmaps/$PACKAGE_NAME.png"
@@ -554,10 +553,14 @@ prepare_rootfs() {
 prepare_script_templates() {
     local work_dir="$1"
 
-    # Scripts manage the fixed unit name husi-daemon.service — no placeholders.
+    # Scripts manage the fixed unit name husi-daemon.service. postinstall.sh
+    # only needs the core path, to relabel it for the SELinux module.
     # One postinstall.sh for every install and upgrade hook, one postremove.sh
     # for deb/rpm/pacman; argument handling is packager-aware.
-    cp "$ROOT_DIR/release/linux/desktop/postinstall.sh" "$work_dir/postinstall.sh"
+    render_template \
+        "$ROOT_DIR/release/linux/desktop/postinstall.sh" \
+        "$work_dir/postinstall.sh" \
+        "$CORE_PATH_PLACEHOLDER" "$CORE_INSTALL_PATH"
     cp "$ROOT_DIR/release/linux/desktop/postremove.sh" "$work_dir/postremove.sh"
 
     # The tarball carries its own user-level installer: no package manager and
@@ -629,6 +632,7 @@ EOF
     write_content_entry "$config_file" "$rootfs/usr/lib/sysusers.d/husi.conf" "/usr/lib/sysusers.d/husi.conf" ""
     write_content_entry "$config_file" "$rootfs/$POLKIT_ACTION_RELATIVE_PATH" "/$POLKIT_ACTION_RELATIVE_PATH" ""
     write_content_entry "$config_file" "$rootfs/$DAEMON_POLKIT_ACTION_RELATIVE_PATH" "/$DAEMON_POLKIT_ACTION_RELATIVE_PATH" ""
+    write_content_entry "$config_file" "$rootfs/$SELINUX_MODULE_RELATIVE_PATH" "/$SELINUX_MODULE_RELATIVE_PATH" ""
 
     local icon_path="$rootfs/usr/share/pixmaps/$PACKAGE_NAME.png"
     if [[ -f "$icon_path" ]]; then
@@ -844,27 +848,22 @@ build_tarball() {
     log "Built tarball: $output_path"
 }
 
-# jlink needs the JDK modules of the *target* architecture, not the host's.
-resolve_jdk_jmods() {
+# jlink needs the JetBrains Runtime modules of the *target* architecture, not
+# the host's, and they come from the same pinned release whatever the host JDK.
+resolve_jbr_jmods() {
     local requested="$1"
-    local host_arch
 
     if [[ -n "$requested" ]]; then
-        JDK_JMODS="$requested"
-    elif [[ -n "${JLINK_JMODS:-}" ]]; then
-        JDK_JMODS="${JLINK_JMODS}"
+        JBR_JMODS_DIR="$requested"
+    elif [[ -n "${JBR_JMODS:-}" ]]; then
+        JBR_JMODS_DIR="${JBR_JMODS}"
     else
-        host_arch="$(normalize_arch "$(uname -m)")"
-        if [[ "$host_arch" != "$TARGET_ARCH" ]]; then
-            error "Building a $TARGET_ARCH AppImage on $host_arch needs that architecture's JDK modules."
-            error "Fetch a JDK for linux/$TARGET_ARCH and pass --jdk-jmods <jdk>/jmods (or set JLINK_JMODS)."
-            exit 1
-        fi
-        JDK_JMODS="$(default_host_jmods)"
+        JBR_JMODS_DIR="$("$ROOT_DIR/buildScript/lib/jbr.sh" "linux/$TARGET_ARCH")"
     fi
 
-    if [[ ! -d "$JDK_JMODS" ]]; then
-        error "JDK modules directory not found: $JDK_JMODS"
+    if [[ ! -d "$JBR_JMODS_DIR" ]]; then
+        error "JetBrains Runtime modules directory not found: $JBR_JMODS_DIR"
+        error "Fetch them first: ./run lib jbr linux/$TARGET_ARCH"
         exit 1
     fi
 }
@@ -900,20 +899,6 @@ resolve_strip_objcopy() {
     fi
 }
 
-default_host_jmods() {
-    local jlink_path
-    local jdk_home
-
-    if [[ -n "${JAVA_HOME:-}" && -d "$JAVA_HOME/jmods" ]]; then
-        echo "$JAVA_HOME/jmods"
-        return
-    fi
-
-    jlink_path="$(command -v jlink)"
-    jdk_home="$(dirname "$(dirname "$(readlink -f "$jlink_path")")")"
-    echo "$jdk_home/jmods"
-}
-
 build_jre() {
     local jvm_dir="$1"
 
@@ -923,7 +908,7 @@ build_jre() {
     # host objcopy can read the target's ELF. Native symbols are not optional
     # to strip: libjvm.so alone carries ~650 MB of them.
     jlink \
-        --module-path "$JDK_JMODS" \
+        --module-path "$JBR_JMODS_DIR" \
         --add-modules "$DESKTOP_JRE_MODULES_COMMON" \
         --strip-java-debug-attributes \
         --strip-native-debug-symbols "objcopy=$STRIP_OBJCOPY" \
@@ -1023,7 +1008,7 @@ build_appimage() {
     local -a appimagetool_args=()
     output_name="$(output_filename "appimage" "$VERSION_NAME")"
 
-    resolve_jdk_jmods "$JDK_JMODS_ARG"
+    resolve_jbr_jmods "$JBR_JMODS_ARG"
     resolve_strip_objcopy "$STRIP_OBJCOPY_ARG"
     resolve_appimage_update_info
     prepare_appdir "$rootfs" "$appdir"
@@ -1072,12 +1057,12 @@ TARGET_ARCH=""
 INPUT_JAR=""
 INPUT_LAUNCHER_BIN=""
 INPUT_CORE_BIN=""
-INPUT_CORE_LIB=""
+INPUT_CORE_LIBRARY=""
 OUTPUT_DIR="$OUTPUT_DIR_DEFAULT"
 PKGREL="1"
 CHECK_TOOLS=0
-JDK_JMODS_ARG=""
-JDK_JMODS=""
+JBR_JMODS_ARG=""
+JBR_JMODS_DIR=""
 APPIMAGE_RUNTIME_ARG="${APPIMAGE_RUNTIME:-}"
 APPIMAGE_UPDATE_INFO_ARG="${APPIMAGE_UPDATE_INFO:-}"
 APPIMAGE_UPDATE_INFO=""
@@ -1111,11 +1096,6 @@ while [[ $# -gt 0 ]]; do
             INPUT_CORE_BIN="$2"
             shift 2
             ;;
-        --core-lib)
-            require_arg "$1" "${2:-}"
-            INPUT_CORE_LIB="$2"
-            shift 2
-            ;;
         -o|--output-dir)
             require_arg "$1" "${2:-}"
             OUTPUT_DIR="$2"
@@ -1126,9 +1106,9 @@ while [[ $# -gt 0 ]]; do
             PKGREL="$2"
             shift 2
             ;;
-        --jdk-jmods)
+        --jbr-jmods)
             require_arg "$1" "${2:-}"
-            JDK_JMODS_ARG="$2"
+            JBR_JMODS_ARG="$2"
             shift 2
             ;;
         --appimage-runtime)
@@ -1178,7 +1158,7 @@ fi
 resolve_input_jar "$INPUT_JAR"
 resolve_launcher_bin "$INPUT_LAUNCHER_BIN"
 resolve_core_bin "$INPUT_CORE_BIN"
-resolve_core_lib "$INPUT_CORE_LIB"
+resolve_core_library
 mkdir -p "$OUTPUT_DIR"
 
 work_dir="$(mktemp -d)"

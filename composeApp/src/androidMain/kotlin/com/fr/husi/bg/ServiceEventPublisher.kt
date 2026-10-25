@@ -3,7 +3,7 @@ package com.fr.husi.bg
 import com.fr.husi.core.ServiceEvent
 import com.fr.husi.core.toProto
 import com.fr.husi.ktx.Logs
-import com.fr.husi.repository.resolveRepository
+import com.fr.husi.repository.resolveAndroidRepository
 
 /**
  * :bg-side publisher for [com.fr.husi.core.CoreClient.subscribeServiceEvents].
@@ -26,7 +26,7 @@ object ServiceEventPublisher {
 
     private fun publish(bytes: ByteArray) {
         try {
-            resolveRepository().boxService?.publishServiceEvent(bytes)
+            resolveAndroidRepository().boxService?.publishServiceEvent(bytes)
         } catch (e: Exception) {
             Logs.w("publish service event", e)
         }

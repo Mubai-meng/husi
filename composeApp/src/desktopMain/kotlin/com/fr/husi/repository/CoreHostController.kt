@@ -1,16 +1,19 @@
 package com.fr.husi.repository
 
 import com.fr.husi.CORE_SOCKET_NAME
+import com.fr.husi.CertProvider
+import com.fr.husi.PLUGIN_CA_FILE
 import com.fr.husi.Key
 import com.fr.husi.bg.BackendState
 import com.fr.husi.bg.OpenConnectAuthWatcher
 import com.fr.husi.bg.OpenVPNAuthWatcher
+import com.fr.husi.bg.TailscaleNotificationWatcher
 import com.fr.husi.bg.ServiceAlert
 import com.fr.husi.bg.ServiceState
 import com.fr.husi.bg.buildPluginSpecs
 import com.fr.husi.bg.initPlugins
 import com.fr.husi.bg.proto.TrafficLooper
-import com.fr.husi.core.BridgeCoreClient
+import com.fr.husi.core.KurpcCoreClient
 import com.fr.husi.core.CoreClient
 import com.fr.husi.core.CoreStateReconciliation
 import com.fr.husi.core.reconciliationFor
@@ -21,14 +24,15 @@ import com.fr.husi.fmt.buildConfig
 import com.fr.husi.ktx.Logs
 import com.fr.husi.ktx.blankAsNull
 import com.fr.husi.ktx.readableMessage
-import com.fr.husi.libcore.Libcore
 import com.fr.husi.platform.Platform
 import com.fr.husi.platform.PlatformInfo
 import com.fr.husi.plugin.PluginNotFoundException
 import com.fr.husi.proto.daemon.ServiceStatus as DaemonServiceStatus
 import com.fr.husi.proto.v1.GetDaemonInfoResponse
 import com.fr.husi.proto.v1.Hosting
+import com.fr.husi.proto.v1.RootCertificateStore
 import com.fr.husi.proto.v1.clientMetadata
+import com.fr.husi.proto.v1.serviceOptions
 import com.fr.husi.proto.v1.startServiceRequest
 import com.fr.husi.resources.Res
 import com.fr.husi.resources.invalid_server
@@ -51,10 +55,8 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeoutOrNull
 import org.koin.core.context.GlobalContext
-import java.io.BufferedReader
 import java.io.File
 import java.io.IOException
-import java.io.InputStreamReader
 import java.net.UnknownHostException
 import java.util.concurrent.TimeUnit
 import kotlin.time.Duration.Companion.milliseconds
@@ -82,7 +84,7 @@ internal class CoreHostController(
     private val resolveCoreClient: () -> CoreClient = { GlobalContext.get().get() },
     private val resolveCoreBinary: () -> File? = ::resolveHusiCoreBinary,
     dispatcher: CoroutineDispatcher = Dispatchers.Default,
-    private val systemProxyBackend: SystemProxyBackend = LibcoreSystemProxyBackend,
+    private val systemProxyBackend: SystemProxyBackend = platformSystemProxyBackend(),
 ) {
     private val scope = CoroutineScope(SupervisorJob() + dispatcher)
     private val access = Mutex()
@@ -154,10 +156,6 @@ internal class CoreHostController(
 
     private var systemProxyApplied = false
 
-    /** Whether the shared client is attached to the privileged system daemon. */
-    val isDaemonMode: Boolean
-        get() = connectedToDaemon
-
     private val coreRunDir: File
         get() = repository.coreRunDir
 
@@ -174,7 +172,10 @@ internal class CoreHostController(
      */
     fun ensureHost() {
         runBlocking {
-            access.withLock { ensureHostLocked() }
+            access.withLock {
+                ensureHostLocked()
+                writeRootCertificatesLocked()
+            }
         }
     }
 
@@ -245,6 +246,7 @@ internal class CoreHostController(
             foreignOwner = null
             publishHostState()
             ensureHostLocked()
+            writeRootCertificatesLocked()
         }
     }
 
@@ -305,6 +307,20 @@ internal class CoreHostController(
         }
         waitForHostReady()
         markHostReady()
+    }
+
+    /**
+     * Writes the roots of the user's certificate provider to [PLUGIN_CA_FILE], for plugins and
+     * the remote control client. The core host reads the store, so Mozilla's and Chrome's
+     * bundles come from the same sing-box build that runs the service.
+     */
+    private suspend fun writeRootCertificatesLocked() {
+        try {
+            val pem = coreClient.getRootCertificates(rootCertificateStore(DataStore.certProvider.get()))
+            repository.externalAssetsDir.resolve(PLUGIN_CA_FILE).writeText(pem)
+        } catch (e: Exception) {
+            Logs.w("write root certificates", e)
+        }
     }
 
     private fun markHostReady() {
@@ -392,7 +408,7 @@ internal class CoreHostController(
             return false
         }
 
-        val probeClient = BridgeCoreClient(daemonPath)
+        val probeClient = KurpcCoreClient.local { daemonPath }
         try {
             probeClient.probe()
             val info = probeClient.getDaemonInfo()
@@ -432,6 +448,7 @@ internal class CoreHostController(
         stopDaemonLease()
         OpenConnectAuthWatcher.stop()
         OpenVPNAuthWatcher.stop()
+        TailscaleNotificationWatcher.stop()
         trafficLooper?.stop()
         trafficLooper = null
         runCatching { coreClient.close() }
@@ -444,10 +461,10 @@ internal class CoreHostController(
 
     private fun checkApiVersion(info: GetDaemonInfoResponse) {
         val daemonVersion = info.apiVersion
-        apiVersionMismatch = daemonVersion != Libcore.APIVersion
+        apiVersionMismatch = daemonVersion != API_VERSION
         if (apiVersionMismatch) {
             val message =
-                "Daemon API version differs (daemon: $daemonVersion, app: ${Libcore.APIVersion}). Update available."
+                "Daemon API version differs (daemon: $daemonVersion, app: ${API_VERSION}). Update available."
             Logs.w(message)
             BackendState.emitAlert(ServiceAlert.Common(message))
         }
@@ -530,18 +547,19 @@ internal class CoreHostController(
             cacheFiles.clear()
             val pluginConfigs = initPlugins(
                 metadata = config.metadata,
-                isVPN = isVPN,
                 cacheFiles = cacheFiles,
             )
             val pluginSpecs = buildPluginSpecs(
                 metadata = config.metadata,
                 pluginConfigs = pluginConfigs,
-                isVPN = isVPN,
             )
 
             val request = startServiceRequest {
                 this.config = config.configJson
                 plugins.addAll(pluginSpecs)
+                options = serviceOptions {
+                    rootCertificates = rootCertificateStore(DataStore.certProvider.get())
+                }
                 clientMetadata = clientMetadata {
                     profileId = profile.id
                     profileName = profile.displayNameForService()
@@ -550,6 +568,7 @@ internal class CoreHostController(
             coreClient.startService(request)
             OpenConnectAuthWatcher.start()
             OpenVPNAuthWatcher.start()
+            TailscaleNotificationWatcher.start()
 
             trafficLooper = TrafficLooper(
                 coreClient = coreClient,
@@ -603,6 +622,7 @@ internal class CoreHostController(
     private suspend fun cleanupLocked() {
         OpenConnectAuthWatcher.stop()
         OpenVPNAuthWatcher.stop()
+        TailscaleNotificationWatcher.stop()
 
         trafficLooper?.stop()
         trafficLooper = null
@@ -695,45 +715,12 @@ internal class CoreHostController(
 
         val process = ProcessBuilder(command)
             .directory(coreRunDir)
-            .redirectErrorStream(false)
+            .redirectOutput(ProcessBuilder.Redirect.INHERIT)
+            .redirectError(ProcessBuilder.Redirect.INHERIT)
             .start()
 
         sessionProcess = process
         sessionStdin = process.outputStream
-
-        Thread(
-            {
-                try {
-                    BufferedReader(InputStreamReader(process.errorStream)).use { reader ->
-                        reader.lineSequence().forEach { line ->
-                            Logs.d("[husi-core] $line")
-                        }
-                    }
-                } catch (_: IOException) {
-                }
-            },
-            "husi-core-stderr",
-        ).apply {
-            isDaemon = true
-            start()
-        }
-
-        Thread(
-            {
-                try {
-                    BufferedReader(InputStreamReader(process.inputStream)).use { reader ->
-                        reader.lineSequence().forEach { line ->
-                            Logs.d("[husi-core] $line")
-                        }
-                    }
-                } catch (_: IOException) {
-                }
-            },
-            "husi-core-stdout",
-        ).apply {
-            isDaemon = true
-            start()
-        }
 
         scope.launch {
             val exit = runInterruptible(Dispatchers.IO) { process.waitFor() }
@@ -879,6 +866,9 @@ internal class CoreHostController(
     }
 
     companion object {
+
+        const val API_VERSION = 4
+
         private val HOST_READY_TIMEOUT = 15.seconds
 
         /**
@@ -893,7 +883,7 @@ internal class CoreHostController(
         /**
          * Parent directory of the Unix daemon UDS
          * (`libcore/daemonhost.DefaultDaemonSocketPath` = `/var/run/husi/api.sock`).
-         * [BridgeClient] dials `basePath/api.sock`.
+         * [KurpcCoreClient] dials `basePath/api.sock`.
          */
         private const val DAEMON_SOCKET_DIR_UNIX = "/var/run/husi"
 
@@ -901,18 +891,16 @@ internal class CoreHostController(
          * Windows protected named pipe
          * (`libcore/coresvc.DaemonPipePath` /
          * `libcore/daemonhost.DefaultDaemonPipePath`).
-         * [BridgeClient] / [Libcore.newBridgeClient] pass this as `basePath`;
-         * Go `coresvc.ClientEndpoint` detects the pipe prefix and dials it
-         * as-is (no `api.sock` join).
+         * Passed to [KurpcCoreClient] as `basePath`; `localCoreTransport` detects
+         * the pipe prefix and dials it as-is (no `api.sock` join).
          */
         private const val DAEMON_PIPE_PATH_WINDOWS =
             """\\.\pipe\ProtectedPrefix\Administrators\husi"""
 
         /**
-         * Base path for [BridgeCoreClient] / [Libcore.newBridgeClient].
-         * Unix: directory containing `api.sock` (joined by
-         * `coresvc.ClientEndpoint` / `SocketPath`).
-         * Windows: full pipe path returned as-is by `coresvc.ClientEndpoint`.
+         * Base path for [KurpcCoreClient].
+         * Unix: directory containing `api.sock`.
+         * Windows: the full pipe path (see `localCoreTransport`).
          */
         internal fun daemonSocketBasePath(): String {
             return when (PlatformInfo.platform) {
@@ -930,6 +918,13 @@ internal class CoreHostController(
             return PlatformInfo.isWindows || File(basePath).resolve("api.sock").exists()
         }
     }
+}
+
+internal fun rootCertificateStore(certProvider: Int): RootCertificateStore = when (certProvider) {
+    CertProvider.MOZILLA -> RootCertificateStore.ROOT_CERTIFICATE_STORE_MOZILLA
+    CertProvider.SYSTEM_AND_USER -> RootCertificateStore.ROOT_CERTIFICATE_STORE_SYSTEM_AND_USER
+    CertProvider.CHROME -> RootCertificateStore.ROOT_CERTIFICATE_STORE_CHROME
+    else -> RootCertificateStore.ROOT_CERTIFICATE_STORE_SYSTEM
 }
 
 /**
@@ -956,8 +951,8 @@ internal fun husiCoreBinaryName(): String {
 
 private fun devHusiCoreCandidates(binaryName: String): List<File> {
     val relativePath = "libcore/build/${hostCoreBuildDirName()}/$binaryName"
-    // Libcore.initCore chdirs the whole process to the data dir, so these
-    // probes must anchor on the JVM launch directory, never the OS cwd.
+    // Anchored on the JVM launch directory, so a `gradlew run` from the repository finds
+    // the binary `make core_desktop` built.
     val launchDir = File(System.getProperty("user.dir").orEmpty()).absoluteFile
     return listOfNotNull(
         launchDir.resolve(relativePath),
@@ -977,21 +972,6 @@ internal fun describeHusiCoreSearchLocations(): String {
         add("PATH")
     }
     return locations.joinToString(", ")
-}
-
-/**
- * Directory containing the packaged anja sidecar library (`libhusicore.so` /
- * `libhusicore.dylib` / `husicore.dll`), or null when running from a fat
- * classpath jar (dev). Same sibling layout as [resolveHusiCoreBinary].
- */
-internal fun resolvePackagedAnjaNativesDir(): File? {
-    val libraryName = when (PlatformInfo.platform) {
-        Platform.Windows -> "husicore.dll"
-        Platform.MacOs -> "libhusicore.dylib"
-        Platform.Linux -> "libhusicore.so"
-        Platform.Android -> return null
-    }
-    return resolvePackagedCoreSibling(libraryName)?.parentFile?.absoluteFile
 }
 
 /**
@@ -1048,7 +1028,7 @@ private fun hostCoreBuildDirName(): String {
     return "${os}_$arch"
 }
 
-private fun resolveOnPath(binaryName: String): File? {
+internal fun resolveOnPath(binaryName: String): File? {
     val path = System.getenv("PATH") ?: return null
     val separator = File.pathSeparatorChar
     for (entry in path.split(separator)) {

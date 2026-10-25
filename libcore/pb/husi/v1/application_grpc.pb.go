@@ -21,12 +21,22 @@ const _ = grpc.SupportPackageIsVersion9
 
 const (
 	ApplicationService_CheckConfig_FullMethodName                  = "/husi.v1.ApplicationService/CheckConfig"
+	ApplicationService_FormatConfig_FullMethodName                 = "/husi.v1.ApplicationService/FormatConfig"
 	ApplicationService_GenerateSchema_FullMethodName               = "/husi.v1.ApplicationService/GenerateSchema"
 	ApplicationService_StandaloneURLTest_FullMethodName            = "/husi.v1.ApplicationService/StandaloneURLTest"
 	ApplicationService_GetCert_FullMethodName                      = "/husi.v1.ApplicationService/GetCert"
 	ApplicationService_StandaloneSTUNTest_FullMethodName           = "/husi.v1.ApplicationService/StandaloneSTUNTest"
 	ApplicationService_StandaloneNetworkQualityTest_FullMethodName = "/husi.v1.ApplicationService/StandaloneNetworkQualityTest"
 	ApplicationService_SpeedTestRun_FullMethodName                 = "/husi.v1.ApplicationService/SpeedTestRun"
+	ApplicationService_HTTPFetch_FullMethodName                    = "/husi.v1.ApplicationService/HTTPFetch"
+	ApplicationService_WebDAVList_FullMethodName                   = "/husi.v1.ApplicationService/WebDAVList"
+	ApplicationService_WebDAVUpload_FullMethodName                 = "/husi.v1.ApplicationService/WebDAVUpload"
+	ApplicationService_WebDAVDownload_FullMethodName               = "/husi.v1.ApplicationService/WebDAVDownload"
+	ApplicationService_WebDAVDelete_FullMethodName                 = "/husi.v1.ApplicationService/WebDAVDelete"
+	ApplicationService_Ping_FullMethodName                         = "/husi.v1.ApplicationService/Ping"
+	ApplicationService_MatchRuleSets_FullMethodName                = "/husi.v1.ApplicationService/MatchRuleSets"
+	ApplicationService_GetRootCertificates_FullMethodName          = "/husi.v1.ApplicationService/GetRootCertificates"
+	ApplicationService_ReadAndroidVPNType_FullMethodName           = "/husi.v1.ApplicationService/ReadAndroidVPNType"
 )
 
 // ApplicationServiceClient is the client API for ApplicationService service.
@@ -47,6 +57,20 @@ const (
 // they share the host's protocol registry, socks path and cancellation model —
 // same placement as StandaloneURLTest (D6).
 //
+// HTTPFetch is the desktop half of the HTTP client husi uses for its own
+// downloads (subscriptions, rule sets, app updates); Android calls the same Go
+// code in-process through the libcore binding. It runs here so the desktop UI
+// needs no Go runtime of its own.
+//
+// The WebDAV RPCs keep backups in a remote directory. File contents travel in
+// chunks, so a backup of any size stays below gRPC's message limit.
+//
+// Ping, MatchRuleSets and GetRootCertificates answer for the UI what it cannot
+// compute without Go: an ICMP socket (and on Android, a socket protected from
+// the VPN), sing-box's rule-set matcher, and the root bundles embedded in
+// sing-box. Rule sets are named by directory: the core already reads the same
+// directories for the rule sets of a running service.
+//
 // The standalone STUN and network quality tests are the no-running-service half
 // of sing-box's pair: with a service started the UI calls
 // daemon.StartedService, which routes through a chosen outbound; with none it
@@ -54,6 +78,7 @@ const (
 // sing-box's own, so the two halves differ only in where the dialer comes from.
 type ApplicationServiceClient interface {
 	CheckConfig(ctx context.Context, in *CheckConfigRequest, opts ...grpc.CallOption) (*CheckConfigResponse, error)
+	FormatConfig(ctx context.Context, in *FormatConfigRequest, opts ...grpc.CallOption) (*FormatConfigResponse, error)
 	GenerateSchema(ctx context.Context, in *GenerateSchemaRequest, opts ...grpc.CallOption) (*GenerateSchemaResponse, error)
 	StandaloneURLTest(ctx context.Context, in *StandaloneURLTestRequest, opts ...grpc.CallOption) (*StandaloneURLTestResponse, error)
 	GetCert(ctx context.Context, in *GetCertRequest, opts ...grpc.CallOption) (*GetCertResponse, error)
@@ -66,6 +91,16 @@ type ApplicationServiceClient interface {
 	// stream back as the same JSON shapes the gomobile SpeedTestListener emits;
 	// cancelling the stream cancels the session and closes the instance.
 	SpeedTestRun(ctx context.Context, in *SpeedTestRunRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[SpeedTestEvent], error)
+	HTTPFetch(ctx context.Context, in *HTTPFetchRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[HTTPFetchResponse], error)
+	WebDAVList(ctx context.Context, in *WebDAVListRequest, opts ...grpc.CallOption) (*WebDAVListResponse, error)
+	WebDAVUpload(ctx context.Context, opts ...grpc.CallOption) (grpc.ClientStreamingClient[WebDAVUploadRequest, WebDAVUploadResponse], error)
+	WebDAVDownload(ctx context.Context, in *WebDAVDownloadRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[WebDAVDownloadResponse], error)
+	WebDAVDelete(ctx context.Context, in *WebDAVDeleteRequest, opts ...grpc.CallOption) (*WebDAVDeleteResponse, error)
+	Ping(ctx context.Context, in *PingRequest, opts ...grpc.CallOption) (*PingResponse, error)
+	MatchRuleSets(ctx context.Context, in *MatchRuleSetsRequest, opts ...grpc.CallOption) (*MatchRuleSetsResponse, error)
+	GetRootCertificates(ctx context.Context, in *GetRootCertificatesRequest, opts ...grpc.CallOption) (*GetRootCertificatesResponse, error)
+	// Android only; other platforms answer UNIMPLEMENTED.
+	ReadAndroidVPNType(ctx context.Context, in *ReadAndroidVPNTypeRequest, opts ...grpc.CallOption) (*ReadAndroidVPNTypeResponse, error)
 }
 
 type applicationServiceClient struct {
@@ -80,6 +115,16 @@ func (c *applicationServiceClient) CheckConfig(ctx context.Context, in *CheckCon
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(CheckConfigResponse)
 	err := c.cc.Invoke(ctx, ApplicationService_CheckConfig_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *applicationServiceClient) FormatConfig(ctx context.Context, in *FormatConfigRequest, opts ...grpc.CallOption) (*FormatConfigResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(FormatConfigResponse)
+	err := c.cc.Invoke(ctx, ApplicationService_FormatConfig_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -173,6 +218,117 @@ func (c *applicationServiceClient) SpeedTestRun(ctx context.Context, in *SpeedTe
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type ApplicationService_SpeedTestRunClient = grpc.ServerStreamingClient[SpeedTestEvent]
 
+func (c *applicationServiceClient) HTTPFetch(ctx context.Context, in *HTTPFetchRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[HTTPFetchResponse], error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &ApplicationService_ServiceDesc.Streams[3], ApplicationService_HTTPFetch_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpc.GenericClientStream[HTTPFetchRequest, HTTPFetchResponse]{ClientStream: stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type ApplicationService_HTTPFetchClient = grpc.ServerStreamingClient[HTTPFetchResponse]
+
+func (c *applicationServiceClient) WebDAVList(ctx context.Context, in *WebDAVListRequest, opts ...grpc.CallOption) (*WebDAVListResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(WebDAVListResponse)
+	err := c.cc.Invoke(ctx, ApplicationService_WebDAVList_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *applicationServiceClient) WebDAVUpload(ctx context.Context, opts ...grpc.CallOption) (grpc.ClientStreamingClient[WebDAVUploadRequest, WebDAVUploadResponse], error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &ApplicationService_ServiceDesc.Streams[4], ApplicationService_WebDAVUpload_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpc.GenericClientStream[WebDAVUploadRequest, WebDAVUploadResponse]{ClientStream: stream}
+	return x, nil
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type ApplicationService_WebDAVUploadClient = grpc.ClientStreamingClient[WebDAVUploadRequest, WebDAVUploadResponse]
+
+func (c *applicationServiceClient) WebDAVDownload(ctx context.Context, in *WebDAVDownloadRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[WebDAVDownloadResponse], error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &ApplicationService_ServiceDesc.Streams[5], ApplicationService_WebDAVDownload_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpc.GenericClientStream[WebDAVDownloadRequest, WebDAVDownloadResponse]{ClientStream: stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type ApplicationService_WebDAVDownloadClient = grpc.ServerStreamingClient[WebDAVDownloadResponse]
+
+func (c *applicationServiceClient) WebDAVDelete(ctx context.Context, in *WebDAVDeleteRequest, opts ...grpc.CallOption) (*WebDAVDeleteResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(WebDAVDeleteResponse)
+	err := c.cc.Invoke(ctx, ApplicationService_WebDAVDelete_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *applicationServiceClient) Ping(ctx context.Context, in *PingRequest, opts ...grpc.CallOption) (*PingResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(PingResponse)
+	err := c.cc.Invoke(ctx, ApplicationService_Ping_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *applicationServiceClient) MatchRuleSets(ctx context.Context, in *MatchRuleSetsRequest, opts ...grpc.CallOption) (*MatchRuleSetsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(MatchRuleSetsResponse)
+	err := c.cc.Invoke(ctx, ApplicationService_MatchRuleSets_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *applicationServiceClient) GetRootCertificates(ctx context.Context, in *GetRootCertificatesRequest, opts ...grpc.CallOption) (*GetRootCertificatesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetRootCertificatesResponse)
+	err := c.cc.Invoke(ctx, ApplicationService_GetRootCertificates_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *applicationServiceClient) ReadAndroidVPNType(ctx context.Context, in *ReadAndroidVPNTypeRequest, opts ...grpc.CallOption) (*ReadAndroidVPNTypeResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ReadAndroidVPNTypeResponse)
+	err := c.cc.Invoke(ctx, ApplicationService_ReadAndroidVPNType_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // ApplicationServiceServer is the server API for ApplicationService service.
 // All implementations must embed UnimplementedApplicationServiceServer
 // for forward compatibility.
@@ -191,6 +347,20 @@ type ApplicationService_SpeedTestRunClient = grpc.ServerStreamingClient[SpeedTes
 // they share the host's protocol registry, socks path and cancellation model —
 // same placement as StandaloneURLTest (D6).
 //
+// HTTPFetch is the desktop half of the HTTP client husi uses for its own
+// downloads (subscriptions, rule sets, app updates); Android calls the same Go
+// code in-process through the libcore binding. It runs here so the desktop UI
+// needs no Go runtime of its own.
+//
+// The WebDAV RPCs keep backups in a remote directory. File contents travel in
+// chunks, so a backup of any size stays below gRPC's message limit.
+//
+// Ping, MatchRuleSets and GetRootCertificates answer for the UI what it cannot
+// compute without Go: an ICMP socket (and on Android, a socket protected from
+// the VPN), sing-box's rule-set matcher, and the root bundles embedded in
+// sing-box. Rule sets are named by directory: the core already reads the same
+// directories for the rule sets of a running service.
+//
 // The standalone STUN and network quality tests are the no-running-service half
 // of sing-box's pair: with a service started the UI calls
 // daemon.StartedService, which routes through a chosen outbound; with none it
@@ -198,6 +368,7 @@ type ApplicationService_SpeedTestRunClient = grpc.ServerStreamingClient[SpeedTes
 // sing-box's own, so the two halves differ only in where the dialer comes from.
 type ApplicationServiceServer interface {
 	CheckConfig(context.Context, *CheckConfigRequest) (*CheckConfigResponse, error)
+	FormatConfig(context.Context, *FormatConfigRequest) (*FormatConfigResponse, error)
 	GenerateSchema(context.Context, *GenerateSchemaRequest) (*GenerateSchemaResponse, error)
 	StandaloneURLTest(context.Context, *StandaloneURLTestRequest) (*StandaloneURLTestResponse, error)
 	GetCert(context.Context, *GetCertRequest) (*GetCertResponse, error)
@@ -210,6 +381,16 @@ type ApplicationServiceServer interface {
 	// stream back as the same JSON shapes the gomobile SpeedTestListener emits;
 	// cancelling the stream cancels the session and closes the instance.
 	SpeedTestRun(*SpeedTestRunRequest, grpc.ServerStreamingServer[SpeedTestEvent]) error
+	HTTPFetch(*HTTPFetchRequest, grpc.ServerStreamingServer[HTTPFetchResponse]) error
+	WebDAVList(context.Context, *WebDAVListRequest) (*WebDAVListResponse, error)
+	WebDAVUpload(grpc.ClientStreamingServer[WebDAVUploadRequest, WebDAVUploadResponse]) error
+	WebDAVDownload(*WebDAVDownloadRequest, grpc.ServerStreamingServer[WebDAVDownloadResponse]) error
+	WebDAVDelete(context.Context, *WebDAVDeleteRequest) (*WebDAVDeleteResponse, error)
+	Ping(context.Context, *PingRequest) (*PingResponse, error)
+	MatchRuleSets(context.Context, *MatchRuleSetsRequest) (*MatchRuleSetsResponse, error)
+	GetRootCertificates(context.Context, *GetRootCertificatesRequest) (*GetRootCertificatesResponse, error)
+	// Android only; other platforms answer UNIMPLEMENTED.
+	ReadAndroidVPNType(context.Context, *ReadAndroidVPNTypeRequest) (*ReadAndroidVPNTypeResponse, error)
 	mustEmbedUnimplementedApplicationServiceServer()
 }
 
@@ -222,6 +403,9 @@ type UnimplementedApplicationServiceServer struct{}
 
 func (UnimplementedApplicationServiceServer) CheckConfig(context.Context, *CheckConfigRequest) (*CheckConfigResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method CheckConfig not implemented")
+}
+func (UnimplementedApplicationServiceServer) FormatConfig(context.Context, *FormatConfigRequest) (*FormatConfigResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method FormatConfig not implemented")
 }
 func (UnimplementedApplicationServiceServer) GenerateSchema(context.Context, *GenerateSchemaRequest) (*GenerateSchemaResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GenerateSchema not implemented")
@@ -240,6 +424,33 @@ func (UnimplementedApplicationServiceServer) StandaloneNetworkQualityTest(*Stand
 }
 func (UnimplementedApplicationServiceServer) SpeedTestRun(*SpeedTestRunRequest, grpc.ServerStreamingServer[SpeedTestEvent]) error {
 	return status.Error(codes.Unimplemented, "method SpeedTestRun not implemented")
+}
+func (UnimplementedApplicationServiceServer) HTTPFetch(*HTTPFetchRequest, grpc.ServerStreamingServer[HTTPFetchResponse]) error {
+	return status.Error(codes.Unimplemented, "method HTTPFetch not implemented")
+}
+func (UnimplementedApplicationServiceServer) WebDAVList(context.Context, *WebDAVListRequest) (*WebDAVListResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method WebDAVList not implemented")
+}
+func (UnimplementedApplicationServiceServer) WebDAVUpload(grpc.ClientStreamingServer[WebDAVUploadRequest, WebDAVUploadResponse]) error {
+	return status.Error(codes.Unimplemented, "method WebDAVUpload not implemented")
+}
+func (UnimplementedApplicationServiceServer) WebDAVDownload(*WebDAVDownloadRequest, grpc.ServerStreamingServer[WebDAVDownloadResponse]) error {
+	return status.Error(codes.Unimplemented, "method WebDAVDownload not implemented")
+}
+func (UnimplementedApplicationServiceServer) WebDAVDelete(context.Context, *WebDAVDeleteRequest) (*WebDAVDeleteResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method WebDAVDelete not implemented")
+}
+func (UnimplementedApplicationServiceServer) Ping(context.Context, *PingRequest) (*PingResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method Ping not implemented")
+}
+func (UnimplementedApplicationServiceServer) MatchRuleSets(context.Context, *MatchRuleSetsRequest) (*MatchRuleSetsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method MatchRuleSets not implemented")
+}
+func (UnimplementedApplicationServiceServer) GetRootCertificates(context.Context, *GetRootCertificatesRequest) (*GetRootCertificatesResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetRootCertificates not implemented")
+}
+func (UnimplementedApplicationServiceServer) ReadAndroidVPNType(context.Context, *ReadAndroidVPNTypeRequest) (*ReadAndroidVPNTypeResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ReadAndroidVPNType not implemented")
 }
 func (UnimplementedApplicationServiceServer) mustEmbedUnimplementedApplicationServiceServer() {}
 func (UnimplementedApplicationServiceServer) testEmbeddedByValue()                            {}
@@ -276,6 +487,24 @@ func _ApplicationService_CheckConfig_Handler(srv interface{}, ctx context.Contex
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(ApplicationServiceServer).CheckConfig(ctx, req.(*CheckConfigRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ApplicationService_FormatConfig_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(FormatConfigRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ApplicationServiceServer).FormatConfig(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ApplicationService_FormatConfig_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ApplicationServiceServer).FormatConfig(ctx, req.(*FormatConfigRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -367,6 +596,143 @@ func _ApplicationService_SpeedTestRun_Handler(srv interface{}, stream grpc.Serve
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type ApplicationService_SpeedTestRunServer = grpc.ServerStreamingServer[SpeedTestEvent]
 
+func _ApplicationService_HTTPFetch_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(HTTPFetchRequest)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
+	}
+	return srv.(ApplicationServiceServer).HTTPFetch(m, &grpc.GenericServerStream[HTTPFetchRequest, HTTPFetchResponse]{ServerStream: stream})
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type ApplicationService_HTTPFetchServer = grpc.ServerStreamingServer[HTTPFetchResponse]
+
+func _ApplicationService_WebDAVList_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(WebDAVListRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ApplicationServiceServer).WebDAVList(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ApplicationService_WebDAVList_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ApplicationServiceServer).WebDAVList(ctx, req.(*WebDAVListRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ApplicationService_WebDAVUpload_Handler(srv interface{}, stream grpc.ServerStream) error {
+	return srv.(ApplicationServiceServer).WebDAVUpload(&grpc.GenericServerStream[WebDAVUploadRequest, WebDAVUploadResponse]{ServerStream: stream})
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type ApplicationService_WebDAVUploadServer = grpc.ClientStreamingServer[WebDAVUploadRequest, WebDAVUploadResponse]
+
+func _ApplicationService_WebDAVDownload_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(WebDAVDownloadRequest)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
+	}
+	return srv.(ApplicationServiceServer).WebDAVDownload(m, &grpc.GenericServerStream[WebDAVDownloadRequest, WebDAVDownloadResponse]{ServerStream: stream})
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type ApplicationService_WebDAVDownloadServer = grpc.ServerStreamingServer[WebDAVDownloadResponse]
+
+func _ApplicationService_WebDAVDelete_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(WebDAVDeleteRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ApplicationServiceServer).WebDAVDelete(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ApplicationService_WebDAVDelete_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ApplicationServiceServer).WebDAVDelete(ctx, req.(*WebDAVDeleteRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ApplicationService_Ping_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PingRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ApplicationServiceServer).Ping(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ApplicationService_Ping_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ApplicationServiceServer).Ping(ctx, req.(*PingRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ApplicationService_MatchRuleSets_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(MatchRuleSetsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ApplicationServiceServer).MatchRuleSets(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ApplicationService_MatchRuleSets_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ApplicationServiceServer).MatchRuleSets(ctx, req.(*MatchRuleSetsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ApplicationService_GetRootCertificates_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetRootCertificatesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ApplicationServiceServer).GetRootCertificates(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ApplicationService_GetRootCertificates_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ApplicationServiceServer).GetRootCertificates(ctx, req.(*GetRootCertificatesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ApplicationService_ReadAndroidVPNType_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ReadAndroidVPNTypeRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ApplicationServiceServer).ReadAndroidVPNType(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ApplicationService_ReadAndroidVPNType_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ApplicationServiceServer).ReadAndroidVPNType(ctx, req.(*ReadAndroidVPNTypeRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // ApplicationService_ServiceDesc is the grpc.ServiceDesc for ApplicationService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -379,6 +745,10 @@ var ApplicationService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _ApplicationService_CheckConfig_Handler,
 		},
 		{
+			MethodName: "FormatConfig",
+			Handler:    _ApplicationService_FormatConfig_Handler,
+		},
+		{
 			MethodName: "GenerateSchema",
 			Handler:    _ApplicationService_GenerateSchema_Handler,
 		},
@@ -389,6 +759,30 @@ var ApplicationService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetCert",
 			Handler:    _ApplicationService_GetCert_Handler,
+		},
+		{
+			MethodName: "WebDAVList",
+			Handler:    _ApplicationService_WebDAVList_Handler,
+		},
+		{
+			MethodName: "WebDAVDelete",
+			Handler:    _ApplicationService_WebDAVDelete_Handler,
+		},
+		{
+			MethodName: "Ping",
+			Handler:    _ApplicationService_Ping_Handler,
+		},
+		{
+			MethodName: "MatchRuleSets",
+			Handler:    _ApplicationService_MatchRuleSets_Handler,
+		},
+		{
+			MethodName: "GetRootCertificates",
+			Handler:    _ApplicationService_GetRootCertificates_Handler,
+		},
+		{
+			MethodName: "ReadAndroidVPNType",
+			Handler:    _ApplicationService_ReadAndroidVPNType_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{
@@ -405,6 +799,21 @@ var ApplicationService_ServiceDesc = grpc.ServiceDesc{
 		{
 			StreamName:    "SpeedTestRun",
 			Handler:       _ApplicationService_SpeedTestRun_Handler,
+			ServerStreams: true,
+		},
+		{
+			StreamName:    "HTTPFetch",
+			Handler:       _ApplicationService_HTTPFetch_Handler,
+			ServerStreams: true,
+		},
+		{
+			StreamName:    "WebDAVUpload",
+			Handler:       _ApplicationService_WebDAVUpload_Handler,
+			ClientStreams: true,
+		},
+		{
+			StreamName:    "WebDAVDownload",
+			Handler:       _ApplicationService_WebDAVDownload_Handler,
 			ServerStreams: true,
 		},
 	},

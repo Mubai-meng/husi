@@ -75,7 +75,7 @@ import com.fr.husi.compose.rememberSwipeToDismissBoxStateUnsaveable
 import com.fr.husi.compose.withNavigation
 import com.fr.husi.database.DataStore
 import com.fr.husi.ktx.Logs
-import com.fr.husi.libcore.Libcore
+import com.fr.husi.ktx.unpackArchive
 import com.fr.husi.repository.resolveRepository
 import com.fr.husi.resources.Res
 import com.fr.husi.resources.action_import_file
@@ -87,7 +87,6 @@ import com.fr.husi.resources.back
 import com.fr.husi.resources.cancel
 import com.fr.husi.resources.delete
 import com.fr.husi.resources.edit
-import com.fr.husi.resources.group_update
 import com.fr.husi.resources.import_url
 import com.fr.husi.resources.link
 import com.fr.husi.resources.more
@@ -196,7 +195,7 @@ internal fun AssetsScreen(
                 return@launch
             }
             try {
-                Libcore.tryUnpack(tempImportFile.absolutePath, geoDir.absolutePath)
+                unpackArchive(tempImportFile, geoDir)
             } catch (e: Exception) {
                 Logs.e(e)
                 return@launch
@@ -570,7 +569,7 @@ private fun AssetCard(
                             ),
                             modifier = Modifier.defaultMinSize(minHeight = 36.dp),
                         ) {
-                            Text(stringResource(Res.string.group_update))
+                            Text(stringResource(Res.string.update))
                         }
                     }
                 }

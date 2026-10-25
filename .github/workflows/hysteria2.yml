@@ -15,13 +15,14 @@ concurrency:
 
 jobs:
   build:
-    runs-on: ubuntu-26.04
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout source code
         uses: actions/checkout@v7
         with:
           submodules: recursive
       - uses: ./.github/actions/load-build-versions
+      - uses: ./.github/actions/setup-ndk
       - uses: actions/setup-go@v7
         with:
           go-version: ${{ env.GO_VERSION }}
@@ -31,10 +32,7 @@ jobs:
             plugin/hysteria2/src/main/go/hysteria2/**/go.sum
       - name: Native build
         run: ./run plugin hysteria2
-      - uses: actions/setup-java@v6
-        with:
-          distribution: temurin
-          java-version: ${{ env.JAVA_VERSION }}
+      - uses: ./.github/actions/setup-jbr
       - uses: ./.github/actions/gradle-cache
         with:
           build-cache-name: plugin-hysteria2
@@ -55,7 +53,7 @@ jobs:
   publish:
     needs: build
     if: startsWith(github.ref, 'refs/tags/plugin-hysteria2-')
-    runs-on: ubuntu-26.04
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v8
         with:
@@ -74,5 +72,5 @@ jobs:
             ref_name="${{ github.ref_name }}"
             UPSTREAM_VERSION="${ref_name#plugin-hysteria2-}"
             UPSTREAM_VERSION="${UPSTREAM_VERSION%-*}"
-            gh release create "$RELEASE_TAG" "${files[@]}" --prerelease --notes $'# :memo: Release Notes\n\nUpstream: https://github.com/HyNetworks/hysteria/releases/tag/app/'"$UPSTREAM_VERSION"
+            gh release create "$RELEASE_TAG" "${files[@]}" --title "$RELEASE_TAG" --prerelease --notes $'# :memo: Release Notes\n\nUpstream: https://github.com/HyNetworks/hysteria/releases/tag/app/'"$UPSTREAM_VERSION"
           fi

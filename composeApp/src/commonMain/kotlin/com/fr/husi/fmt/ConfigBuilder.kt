@@ -68,6 +68,10 @@ import com.fr.husi.fmt.socks.SOCKSBean
 import com.fr.husi.fmt.socks.buildSingBoxOutboundSocksBean
 import com.fr.husi.fmt.ssh.SSHBean
 import com.fr.husi.fmt.ssh.buildSingBoxOutboundSSHBean
+import com.fr.husi.fmt.tailscale.TailcatBean
+import com.fr.husi.fmt.tailscale.TailscaleBean
+import com.fr.husi.fmt.tailscale.buildSingBoxEndpointTailscaleBean
+import com.fr.husi.fmt.tailscale.buildSingBoxOutboundTailcatBean
 import com.fr.husi.fmt.trusttunnel.TrustTunnelBean
 import com.fr.husi.fmt.trusttunnel.buildSingBoxOutboundTrustTunnelBean
 import com.fr.husi.fmt.tuic.TuicBean
@@ -91,10 +95,10 @@ import com.fr.husi.ktx.serverAddressDomainStrategy
 import com.fr.husi.ktx.showToast
 import com.fr.husi.ktx.toJsonElementKxs
 import com.fr.husi.ktx.toJsonMapKxs
-import com.fr.husi.libcore.Libcore
 import com.fr.husi.logLevelString
 import com.fr.husi.platform.PlatformInfo
 import com.fr.husi.repository.resolveRepository
+import io.github.xchacha20_poly1305.kpuri.Url
 import kotlinx.coroutines.flow.first
 import kotlinx.serialization.json.JsonPrimitive
 
@@ -217,6 +221,7 @@ class ConfigBuildResult(
 class ConfigMetadata(
     val mainTag: String,
     val externalIndex: List<IndexEntity>,
+    val protectedPluginPorts: Set<Int> = emptySet(),
     val trafficProfiles: List<ProxyEntity>,
     val tagToID: Map<String, Long>,
     val trafficGraph: Map<String, TrafficNode> = emptyMap(),
@@ -457,7 +462,7 @@ suspend fun buildConfig(
                 }
 
                 is ProxySetBean -> {
-                    val memberProfiles = bean.resolveMembers(id, failOnMissing = true)
+                    val memberProfiles = bean.resolveMembers(id, strict = true)
 
                     val memberChains = mutableListOf<ResolvedChain>()
                     for (member in memberProfiles) {
@@ -582,7 +587,18 @@ suspend fun buildConfig(
         .toMap()
         .takeIf { it.isNotEmpty() }
     val externalIndexMap = ArrayList<IndexEntity>()
+    val protectedPluginPorts = HashSet<Int>()
     val networkStrategy = DataStore.networkStrategy.get()
+    val fakeDNSRange4 = if (!useFakeDns || networkStrategy == SingBoxOptions.STRATEGY_IPV6_ONLY) {
+        null
+    } else {
+        DataStore.fakeDNSRange4.get().blankAsNull()
+    }
+    val fakeDNSRange6 = if (!useFakeDns || networkStrategy == SingBoxOptions.STRATEGY_IPV4_ONLY) {
+        null
+    } else {
+        DataStore.fakeDNSRange6.get().blankAsNull()
+    }
     val networkInterfaceStrategy = DataStore.networkInterfaceType.get()
     val networkPreferredInterfaces = DataStore.networkPreferredInterfaces.get().toList()
     val defaultStrategy = networkStrategy.blankAsNull()
@@ -649,7 +665,7 @@ suspend fun buildConfig(
 
         inbounds = mutableListOf()
 
-        if (!forTest && PlatformInfo.isAndroid && !forExport) {
+        if (!forTest && !forExport) {
             val platformServices = mutableListOf<SingBoxOptions.Service>()
 
             if (isVPN) {
@@ -658,11 +674,12 @@ suspend fun buildConfig(
                         type = SingBoxOptions.TYPE_PROTECT
                         tag = TAG_SERVICE_PROTECT
                         path = protectPath
+                        verify_peer = !DataStore.allowAppsBypassVpn.get()
                     },
                 )
             }
 
-            if (allowAccess) {
+            if (PlatformInfo.isAndroid && allowAccess) {
                 DataStore.anchorSSID.get().blankAsNull()?.let { allowedSSIDs ->
                     platformServices.add(
                         SingBoxOptions.Service_AnchorOptions().apply {
@@ -839,13 +856,17 @@ suspend fun buildConfig(
 
                 val tagOut = reserveTag(entry)
 
-                if (proxyEntity.needExternal()) { // external outbound
-                    val localPort = mkPort()
-                    externalChainMap[localPort] = proxyEntity
+                val pluginPort = if (proxyEntity.needExternal()) {
+                    mkPort()
+                } else {
+                    null
+                }
+                if (pluginPort != null) { // external outbound
+                    externalChainMap[pluginPort] = proxyEntity
                     currentOutbound = Outbound_SOCKSOptions().apply {
                         type = SingBoxOptions.TYPE_SOCKS
                         server = LOCALHOST4
-                        server_port = localPort
+                        server_port = pluginPort
                     }.asKxsMap()
                 } else { // internal outbound
                     currentOutbound = when (bean) {
@@ -880,6 +901,18 @@ suspend fun buildConfig(
                         }
 
                         is MASQUEBean -> buildSingBoxEndpointMASQUEBean(bean).asKxsMap()
+
+                        is TailscaleBean -> {
+                            vpnWithPushDNS[tagOut] = SingBoxOptions.DNS_TYPE_TAILSCALE
+                            val extraRoutes = if (bean.advertiseFakeDNSRoutes) {
+                                listOfNotNull(fakeDNSRange4, fakeDNSRange6)
+                            } else {
+                                emptyList()
+                            }
+                            buildSingBoxEndpointTailscaleBean(bean, extraRoutes).asKxsMap()
+                        }
+
+                        is TailcatBean -> buildSingBoxOutboundTailcatBean(bean).asKxsMap()
 
                         is SSHBean -> buildSingBoxOutboundSSHBean(bean).asKxsMap()
 
@@ -967,12 +1000,14 @@ suspend fun buildConfig(
                 bean.finalAddress = bean.serverAddress
                 bean.finalPort = bean.serverPort
                 var currentInboundTag: String? = null
-                if (bean.canMapping && proxyEntity.needExternal()) {
+                if (pluginPort != null) {
                     val needDirectRoute = entry.key !in entriesWithContinuation
-                    val canDialDirect = bean.canSelfProtect // Plugin support protect.
-                        && needDirectRoute // on direct out
-                        && !forTest // When testing, there may no protect service.
-                        && (PlatformInfo.isAndroid || !isVPN) // Only Android support protect path, only VPN need protect.
+                    // The test instance has no protect service and relies on the mapping for isolation.
+                    val canProtect = !forTest && bean.canSelfProtect
+                    val canDialDirect = !bean.canMapping || (canProtect && needDirectRoute)
+                    if (canDialDirect && canProtect && isVPN) { // Only VPN needs protect.
+                        protectedPluginPorts.add(pluginPort)
+                    }
                     if (!canDialDirect) {
                         val mappingPort = mkPort()
                         bean.finalAddress = LOCALHOST4
@@ -1022,6 +1057,17 @@ suspend fun buildConfig(
                 val previousEntry = checkNotNull(profileEntriesByKey[link.from])
                 val currentTag = checkNotNull(reservedTags[link.to])
                 connectChainNode(previousEntry, currentTag)
+            }
+
+            // Tailcat fetches its DERP map with its own HTTP client, which must leave through
+            // the same detour as the DERP connections.
+            for (outbound in outboundsByTag.values) {
+                if (outbound["type"] != SingBoxOptions.TYPE_TAILCAT) continue
+                val detour = outbound["detour"] ?: continue
+                @Suppress("UNCHECKED_CAST")
+                val httpClient = outbound["http_client"] as? JSONMap ?: mutableMapOf()
+                httpClient.putIfAbsent("detour", detour)
+                outbound["http_client"] = httpClient
             }
 
             // Mirror the shape of what was just emitted, so traffic accounting can walk
@@ -1196,6 +1242,9 @@ suspend fun buildConfig(
                     }
                     if (processRules.isNotEmpty()) {
                         makeProcessRule(processRules)
+                    }
+                    if (rule.clashMode.isNotBlank()) {
+                        clash_mode = rule.clashMode
                     }
                     if (requestDNSRules.isNotEmpty()) {
                         makeCommonRule(requestDNSRules)
@@ -1488,7 +1537,7 @@ suspend fun buildConfig(
                 address = address.substringAfter("://")
             }
             try {
-                Libcore.parseURL("https://$address").apply {
+                Url.parse("https://$address").host?.let { host ->
                     if (!host.isIpAddress()) {
                         preResolveDomains.add(host)
                     }
@@ -1557,29 +1606,6 @@ suspend fun buildConfig(
             )
             dns!!.rules = mutableListOf()
         } else {
-            // clash mode
-            route!!.rules!!.add(
-                0,
-                Rule_Default().apply {
-                    clash_mode = RuleEntity.MODE_GLOBAL
-                    outbound = mainTag
-                }.asKxsMap(),
-            )
-            route!!.rules!!.add(
-                0,
-                Rule_Default().apply {
-                    clash_mode = RuleEntity.MODE_DIRECT
-                    outbound = TAG_DIRECT
-                }.asKxsMap(),
-            )
-            route!!.rules!!.add(
-                0,
-                Rule_Default().apply {
-                    clash_mode = RuleEntity.MODE_BLOCK
-                    action = SingBoxOptions.ACTION_REJECT
-                }.asKxsMap(),
-            )
-
             // built-in DNS rules
             // TUN hijack mode handles port 53 automatically;
             // only the local DNS inbound needs an explicit hijack rule.
@@ -1595,22 +1621,12 @@ suspend fun buildConfig(
 
             // FakeDNS obj
             if (useFakeDns) {
-                val fakeRange4 = if (networkStrategy == SingBoxOptions.STRATEGY_IPV6_ONLY) {
-                    null
-                } else {
-                    DataStore.fakeDNSRange4.get().blankAsNull()
-                }
-                val fakeRange6 = if (networkStrategy == SingBoxOptions.STRATEGY_IPV4_ONLY) {
-                    null
-                } else {
-                    DataStore.fakeDNSRange6.get().blankAsNull()
-                }
                 dns!!.servers!!.add(
                     NewDNSServerOptions_FakeIPDNSServerOptions().apply {
                         type = SingBoxOptions.DNS_TYPE_FAKEIP
                         tag = TAG_DNS_FAKE
-                        inet4_range = fakeRange4
-                        inet6_range = fakeRange6
+                        inet4_range = fakeDNSRange4
+                        inet6_range = fakeDNSRange6
                     },
                 )
                 dns!!.rules!!.add(
@@ -1670,6 +1686,14 @@ suspend fun buildConfig(
                         }
                     }
 
+                    SingBoxOptions.DNS_TYPE_TAILSCALE -> {
+                        SingBoxOptions.NewDNSServerOptions_TailscaleDNSServerOptions().apply {
+                            type = dnsType
+                            tag = dnsTag
+                            endpoint = endpointTag
+                        }
+                    }
+
                     else -> error("unsupported VPN DNS type: $dnsType")
                 }
                 dns!!.servers!!.add(server)
@@ -1700,27 +1724,6 @@ suspend fun buildConfig(
                 )
                 addPreferredDNSRule(TAG_DNS_HOSTS)
             }
-
-            // clash mode
-            dns!!.rules!!.addAll(
-                0,
-                remoteDNSGroup.routeRules {
-                    clash_mode = RuleEntity.MODE_GLOBAL
-                },
-            )
-            dns!!.rules!!.addAll(
-                0,
-                directDNSGroup.routeRules {
-                    clash_mode = RuleEntity.MODE_DIRECT
-                },
-            )
-            dns!!.rules!!.add(
-                0,
-                DNSRule_Default().apply {
-                    clash_mode = RuleEntity.MODE_BLOCK
-                    action = SingBoxOptions.ACTION_REJECT
-                }.asKxsMap(),
-            )
 
             dns!!.rules!!.addAll(0, preResolveDomains.rules())
 
@@ -1776,6 +1779,7 @@ suspend fun buildConfig(
             ConfigMetadata(
                 mainTag = mainTag,
                 externalIndex = externalIndexMap,
+                protectedPluginPorts = protectedPluginPorts,
                 trafficProfiles = trafficProfiles.values.toList(),
                 tagToID = tagToID,
                 trafficGraph = trafficGraph,

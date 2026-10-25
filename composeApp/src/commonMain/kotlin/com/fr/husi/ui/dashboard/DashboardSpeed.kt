@@ -27,11 +27,11 @@ import androidx.compose.ui.util.fastCoerceAtLeast
 import androidx.compose.ui.util.fastCoerceAtMost
 import androidx.compose.ui.util.fastCoerceIn
 import com.fr.husi.compose.material3.Text
-import com.fr.husi.libcore.Libcore
+import com.fr.husi.ktx.formatBytes
 import com.fr.husi.resources.Res
+import com.fr.husi.resources.direct
+import com.fr.husi.resources.proxy
 import com.fr.husi.resources.speed
-import com.fr.husi.resources.status_direct
-import com.fr.husi.resources.status_proxy
 import org.jetbrains.compose.resources.stringResource
 
 // Reference: https://github.com/SagerNet/sing-box-for-android/blob/8f6343802a6d8e0fa478d9e642cbb58c147e671b/app/src/main/java/io/nekohasekai/sfa/compose/LineChart.kt
@@ -50,7 +50,7 @@ internal fun ProxySpeedCard(
     modifier: Modifier = Modifier,
 ) {
     SpeedCard(
-        title = stringResource(Res.string.status_proxy),
+        title = stringResource(Res.string.proxy),
         txRate = uiState.txRateProxy,
         rxRate = uiState.rxRateProxy,
         history = uiState.proxySpeedHistory,
@@ -66,7 +66,7 @@ internal fun DirectSpeedCard(
     modifier: Modifier = Modifier,
 ) {
     SpeedCard(
-        title = stringResource(Res.string.status_direct),
+        title = stringResource(Res.string.direct),
         txRate = uiState.txRateDirect,
         rxRate = uiState.rxRateDirect,
         history = uiState.directSpeedHistory,
@@ -98,7 +98,7 @@ private fun SpeedCard(
             Text(
                 text = "▲ " + stringResource(
                     Res.string.speed,
-                    Libcore.formatBytes(txRate),
+                    txRate.formatBytes(),
                 ),
                 style = MaterialTheme.typography.bodyLarge,
                 maxLines = 1,
@@ -107,7 +107,7 @@ private fun SpeedCard(
             Text(
                 text = "▼ " + stringResource(
                     Res.string.speed,
-                    Libcore.formatBytes(rxRate),
+                    rxRate.formatBytes(),
                 ),
                 style = MaterialTheme.typography.bodyLarge,
                 maxLines = 1,

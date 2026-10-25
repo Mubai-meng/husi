@@ -12,28 +12,27 @@ import (
 	E "github.com/sagernet/sing/common/exceptions"
 	M "github.com/sagernet/sing/common/metadata"
 
-	"github.com/xchacha20-poly1305/husi/libcore/v2/plugin/protect"
 	"github.com/xchacha20-poly1305/husi/libcore/v2/urltest"
 	"github.com/xchacha20-poly1305/libping"
+	"github.com/xchacha20-poly1305/protect-go"
 )
 
 func ignoreProtectError() control.Func {
+	protectControl := protect.Control(protectSocketPath)
 	return func(network, address string, conn syscall.RawConn) error {
-		_ = control.Raw(conn, func(fd uintptr) error {
-			// Pings run in the UI process, which has no VPN service of its own.
-			_ = protect.Protect(protectSocketPath, int(fd))
-			return nil
-		})
+		// Pings must bypass the VPN this process may be running,
+		// but must not fail when no protect service answers.
+		_ = protectControl(network, address, conn)
 		return nil
 	}
 }
 
-// IcmpPing use ICMP to probe the address. `timeout` is Millisecond.
-func IcmpPing(address string, timeout int32) (latency int32, err error) {
+// icmpPing probes address with an ICMP echo. timeout is in milliseconds.
+func icmpPing(ctx context.Context, address string, timeout int32) (latency int32, err error) {
 	payload := make([]byte, 40)
 	_, _ = rand.Read(payload)
 
-	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeout)*time.Millisecond)
+	ctx, cancel := context.WithTimeout(ctx, time.Duration(timeout)*time.Millisecond)
 	defer cancel()
 
 	t, err := libping.IcmpPing(ctx, M.ParseSocksaddr(address), payload, ignoreProtectError())
@@ -44,12 +43,13 @@ func IcmpPing(address string, timeout int32) (latency int32, err error) {
 	return int32(t.Milliseconds()), nil
 }
 
-// TcpPing try create TCP connection to target. `timeout` is Millisecond.
-func TcpPing(host, port string, timeout int32) (latency int32, err error) {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeout)*time.Millisecond)
+// tcpPing measures how long a TCP connection to host:port takes to open.
+// timeout is in milliseconds.
+func tcpPing(ctx context.Context, host string, port uint16, timeout int32) (latency int32, err error) {
+	ctx, cancel := context.WithTimeout(ctx, time.Duration(timeout)*time.Millisecond)
 	defer cancel()
 
-	l, err := libping.TcpPing(ctx, M.ParseSocksaddrHostPortStr(host, port), ignoreProtectError())
+	l, err := libping.TcpPing(ctx, M.ParseSocksaddrHostPort(host, port), ignoreProtectError())
 	if err != nil {
 		return -1, err
 	}

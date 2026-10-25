@@ -1,6 +1,6 @@
 package com.fr.husi.ui.openconnect
 
-import com.fr.husi.core.CoreClient
+import com.fr.husi.core.remote.CoreTarget
 import com.fr.husi.database.DataStore
 import com.fr.husi.database.ProfileManager
 import com.fr.husi.database.ProxyEntity
@@ -24,7 +24,6 @@ import com.fr.husi.vpn.toState
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.map
-import org.koin.core.context.GlobalContext
 
 typealias PendingOpenConnectAuth = PendingVpnAuth<OpenConnectAuthChallengeState>
 
@@ -37,11 +36,12 @@ typealias PendingOpenConnectAuth = PendingVpnAuth<OpenConnectAuthChallengeState>
  * status page) while [cancelAuthChallenge] actually aborts authentication.
  */
 class OpenConnectAuthController(
-    private val coreClient: CoreClient = GlobalContext.get().get(),
+    targets: StateFlow<CoreTarget?>,
 ) {
     private val session = VpnAuthSession(
-        subscribe = {
-            coreClient.subscribeOpenConnectStatus().map { update ->
+        targets = targets,
+        subscribe = { client ->
+            client.subscribeOpenConnectStatus().map { update ->
                 update.endpointsList.map { it.toState() }
             }
         },
@@ -56,6 +56,9 @@ class OpenConnectAuthController(
 
     val endpoints: StateFlow<List<OpenConnectEndpointState>>
         get() = session.endpoints
+
+    val pendingChallengeKeys: StateFlow<Set<String>>
+        get() = session.pendingChallengeKeys
 
     val pendingDialogAuth: StateFlow<PendingOpenConnectAuth?>
         get() = session.pendingDialogAuth
@@ -72,7 +75,7 @@ class OpenConnectAuthController(
         formValues: Map<String, String>?,
         browserResult: OpenConnectBrowserResultState?,
     ): String? {
-        val error = session.perform("submit openconnect auth challenge") {
+        val error = session.perform("submit openconnect auth challenge") { target ->
             val submission = openConnectAuthResponseSubmission {
                 this.endpointTag = endpointTag
                 challengeID = challenge.id
@@ -106,8 +109,8 @@ class OpenConnectAuthController(
                     }
                 }
             }
-            coreClient.submitOpenConnectAuthResponse(submission)
-            if (challenge.form != null && formValues != null) {
+            target.client.submitOpenConnectAuthResponse(submission)
+            if (!target.isRemote && challenge.form != null && formValues != null) {
                 persistFormEntries(endpointTag, challenge, formValues)
             }
         }
@@ -167,7 +170,7 @@ class OpenConnectAuthController(
 
     /** @return an error message, or null on success. */
     suspend fun cancelAuthChallenge(endpointTag: String, challengeId: String): String? =
-        session.perform("cancel openconnect auth challenge") {
-            coreClient.cancelOpenConnectAuthChallenge(endpointTag, challengeId)
+        session.perform("cancel openconnect auth challenge") { target ->
+            target.client.cancelOpenConnectAuthChallenge(endpointTag, challengeId)
         }
 }

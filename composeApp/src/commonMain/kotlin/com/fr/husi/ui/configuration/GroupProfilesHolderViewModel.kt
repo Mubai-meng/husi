@@ -13,8 +13,8 @@ import com.fr.husi.database.ProxyGroup
 import com.fr.husi.database.SagerDatabase
 import com.fr.husi.database.displayType
 import com.fr.husi.fmt.ValidateResult
+import com.fr.husi.ktx.formatBytes
 import com.fr.husi.ktx.runOnDefaultDispatcher
-import com.fr.husi.libcore.Libcore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.coroutineScope
@@ -236,7 +236,7 @@ class GroupProfilesHolderViewModel(
             }
             .sortedWith(comparator)
         hasLoadedProfiles = true
-        // 卡片展示所需的重活（安全校验 + formatBytes JNI）在后台线程
+        // 卡片展示所需的重活（安全校验 + 流量格式化）在后台线程
         // 一次性预计算，避免冷启动初期滚动时逐卡在主线程执行。
         val securityAdvisoryOn = DataStore.securityAdvisory.get()
         val trafficStatisticsOn = DataStore.profileTrafficStatistics.get()
@@ -254,7 +254,7 @@ class GroupProfilesHolderViewModel(
                         null
                     },
                     trafficFormatted = if (trafficStatisticsOn && entity.tx + entity.rx > 0L) {
-                        Libcore.formatBytes(entity.tx) to Libcore.formatBytes(entity.rx)
+                        entity.tx.formatBytes() to entity.rx.formatBytes()
                     } else {
                         null
                     },

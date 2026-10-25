@@ -118,6 +118,7 @@ import com.fr.husi.resources.action_shadowtls
 import com.fr.husi.resources.action_snell
 import com.fr.husi.resources.action_socks
 import com.fr.husi.resources.action_ssh
+import com.fr.husi.resources.action_tailcat
 import com.fr.husi.resources.action_trojan
 import com.fr.husi.resources.action_trusttunnel
 import com.fr.husi.resources.action_tuic
@@ -164,8 +165,8 @@ import com.fr.husi.resources.proxy_set
 import com.fr.husi.resources.remove_duplicate
 import com.fr.husi.resources.removed
 import com.fr.husi.resources.search
-import com.fr.husi.resources.search_go
 import com.fr.husi.resources.sort_mode
+import com.fr.husi.resources.tailscale
 import com.fr.husi.resources.undo
 import com.fr.husi.resources.view_list
 import com.fr.husi.results.ResultEffect
@@ -273,7 +274,7 @@ fun ConfigurationScreen(
             textFieldState = searchTextFieldState,
             searchBarState = searchBarState,
             onSearch = { focusManager.clearFocus() },
-            placeholder = { Text(stringResource(Res.string.search_go)) },
+            placeholder = { Text(stringResource(Res.string.search)) },
             leadingIcon = {
                 Icon(vectorResource(Res.drawable.search), null)
             },
@@ -330,6 +331,8 @@ fun ConfigurationScreen(
             Res.string.action_openconnect to ProxyEntity.TYPE_OPENCONNECT,
             Res.string.action_openvpn to ProxyEntity.TYPE_OPENVPN,
             Res.string.action_masque to ProxyEntity.TYPE_MASQUE,
+            Res.string.tailscale to ProxyEntity.TYPE_TAILSCALE,
+            Res.string.action_tailcat to ProxyEntity.TYPE_TAILCAT,
             Res.string.action_shadowtls to ProxyEntity.TYPE_SHADOWTLS,
             Res.string.action_anytls to ProxyEntity.TYPE_ANYTLS,
             Res.string.action_shadowquic to ProxyEntity.TYPE_SHADOWQUIC,

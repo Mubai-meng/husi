@@ -32,8 +32,8 @@ import com.fr.husi.ktx.selectByNetworkStrategy
 import com.fr.husi.ktx.serverAddressDomainStrategy
 import com.fr.husi.core.CoreClient
 import com.fr.husi.core.urlTestOptions
-import com.fr.husi.libcore.Libcore
 import com.fr.husi.plugin.PluginNotFoundException
+import com.fr.husi.proto.v1.PingProtocol
 import com.fr.husi.repository.resolveRepository
 import com.fr.husi.speedtest.SpeedTestManager
 import io.github.vinceglb.filekit.PlatformFile
@@ -121,6 +121,9 @@ sealed interface FailureReason {
     data class Generic(val message: String?) : FailureReason
     data class PluginNotFound(val plugin: String) : FailureReason
 }
+
+private const val ICMP_PING_TIMEOUT_MS = 5000
+private const val TCP_PING_TIMEOUT_MS = 3000
 
 @Stable
 enum class TestType {
@@ -409,7 +412,7 @@ class ConfigurationScreenViewModel(
             ?: return TestResult.Failure(FailureReason.DomainNotFound)
 
         return try {
-            val result = Libcore.icmpPing(address, 5000)
+            val result = coreClient.ping(PingProtocol.PING_PROTOCOL_ICMP, address, 0, ICMP_PING_TIMEOUT_MS)
             TestResult.Success(result)
         } catch (e: Exception) {
             Logs.e(e)
@@ -425,7 +428,7 @@ class ConfigurationScreenViewModel(
             ?: return TestResult.Failure(FailureReason.DomainNotFound)
 
         return try {
-            val result = Libcore.tcpPing(address, bean.serverPort.toString(), 3000)
+            val result = coreClient.ping(PingProtocol.PING_PROTOCOL_TCP, address, bean.serverPort, TCP_PING_TIMEOUT_MS)
             TestResult.Success(result)
         } catch (e: Exception) {
             Logs.e(e)
@@ -472,12 +475,12 @@ class ConfigurationScreenViewModel(
 
         return try {
             val config = buildConfig(profile, forTest = true)
-            // isVPN=false: standalone URL test has no protect env, matching the
-            // previous in-process path. Cert material still lands in cacheDir via
-            // hysteria/shadowquic builders and is cleaned up below.
+            // A test build protects no plugin: the URL test has no protect service.
+            // Cert material still lands in cacheDir via hysteria/shadowquic
+            // builders and is cleaned up below.
             val plugins = if (config.metadata.externalIndex.any { it.chain.isNotEmpty() }) {
-                val pluginConfigs = initPlugins(config.metadata, false, cacheFiles)
-                buildPluginSpecs(config.metadata, pluginConfigs, false)
+                val pluginConfigs = initPlugins(config.metadata, cacheFiles)
+                buildPluginSpecs(config.metadata, pluginConfigs)
             } else {
                 emptyList()
             }

@@ -1,6 +1,5 @@
 package com.fr.husi.group
 
-import com.fr.husi.database.DataStore
 import com.fr.husi.database.ProxyGroup
 import com.fr.husi.database.SubscriptionBean
 import com.fr.husi.fmt.AbstractBean
@@ -17,13 +16,15 @@ import com.fr.husi.ktx.JSONMap
 import com.fr.husi.ktx.Logs
 import com.fr.husi.ktx.SubscriptionFoundException
 import com.fr.husi.ktx.b64DecodeToString
-import com.fr.husi.ktx.generateUserAgent
+import com.fr.husi.ktx.blankAsNull
 import com.fr.husi.ktx.isIpAddress
 import com.fr.husi.ktx.kxs
 import com.fr.husi.ktx.parseProxies
 import com.fr.husi.ktx.toJsonMapKxs
-import com.fr.husi.libcore.NO_OVERALL_TIMEOUT_MS
-import com.fr.husi.libcore.resolveHttpClientFactory
+import com.fr.husi.net.HttpFetchRequest
+import com.fr.husi.net.buildUserAgent
+import com.fr.husi.net.localSocks5Proxy
+import com.fr.husi.net.resolveHttpFetcher
 import com.fr.husi.repository.resolveRepository
 import com.fr.husi.resources.Res
 import com.fr.husi.resources.no_proxies_found
@@ -48,29 +49,20 @@ object RawUpdater : GroupUpdater() {
         if (subscription.link.startsWith("content://")) {
             contentText = readContentUri(subscription.link) ?: errNotFound()
         } else {
-            val response = resolveHttpClientFactory().newHttpClient().apply {
-                if (DataStore.serviceState.connected) {
-                    useSocks5(
-                        DataStore.mixedPort.get(),
-                        DataStore.inboundUsername.get(),
-                        DataStore.inboundPassword.get(),
-                    )
-                }
-                if (subscription.ageIdentity.isNotBlank()) {
-                    setAgeKey(subscription.ageIdentity)
-                }
-            }.newRequest().apply {
-                setURL(subscription.link)
-                setUserAgent(generateUserAgent(subscription.customUserAgent))
+            val request = HttpFetchRequest(
+                url = subscription.link,
+                userAgent = buildUserAgent(subscription.customUserAgent),
+                socks5 = localSocks5Proxy(),
+                ageIdentities = subscription.ageIdentity.blankAsNull(),
                 // Subscription content can be large and the server can be slow; the
-                // default overall deadline (TCPTimeout) kills the body read midway.
-                // Same treatment as rule set / app update downloads: no overall
-                // deadline, connection setup still times out, stall reader still
-                // fails stalled transfers.
-                setTimeout(NO_OVERALL_TIMEOUT_MS)
-            }.execute()
-            contentText = response.contentString
-            userInfo = response.getHeader("Subscription-Userinfo")
+                // default overall deadline kills the body read midway. Same treatment
+                // as rule set / app update downloads: no overall deadline, connection
+                // setup still times out, stall reader still fails stalled transfers.
+                noOverallDeadline = true,
+            )
+            val response = resolveHttpFetcher().fetchText(request)
+            contentText = response.content
+            userInfo = response.header("Subscription-Userinfo").orEmpty()
         }
 
         val proxies = parseRaw(contentText) ?: errNotFound()

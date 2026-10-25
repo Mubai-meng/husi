@@ -45,15 +45,16 @@ import com.fr.husi.compose.platformCombinedClickable
 import com.fr.husi.fmt.SingBoxOptions
 import com.fr.husi.ktx.blankAsNull
 import com.fr.husi.ktx.emptyAsNull
-import com.fr.husi.libcore.Libcore
+import com.fr.husi.ktx.formatBytes
+import com.fr.husi.ktx.splitAddress
 import com.fr.husi.resources.Res
+import com.fr.husi.resources.active
 import com.fr.husi.resources.add_road
 import com.fr.husi.resources.cancel
 import com.fr.husi.resources.chain
 import com.fr.husi.resources.close
 import com.fr.husi.resources.closed_time
 import com.fr.husi.resources.connection_status
-import com.fr.husi.resources.connection_status_active
 import com.fr.husi.resources.connection_status_closed
 import com.fr.husi.resources.create_rule
 import com.fr.husi.resources.delete_forever
@@ -193,7 +194,7 @@ internal fun ConnectionDetailSheet(
                                 text = if (connection.isClosed) {
                                     stringResource(Res.string.connection_status_closed)
                                 } else {
-                                    stringResource(Res.string.connection_status_active)
+                                    stringResource(Res.string.active)
                                 },
                                 color = if (connection.isClosed) {
                                     Color.Red
@@ -249,13 +250,13 @@ internal fun ConnectionDetailSheet(
                             field = Res.string.upload,
                             isSelecting = isSelecting,
                         ) {
-                            Text(Libcore.formatBytes(connection.uploadTotal))
+                            Text(connection.uploadTotal.formatBytes())
                         }
                         ConnectionField(
                             field = Res.string.download,
                             isSelecting = isSelecting,
                         ) {
-                            Text(Libcore.formatBytes(connection.downloadTotal))
+                            Text(connection.downloadTotal.formatBytes())
                         }
                         ConnectionField(
                             field = Res.string.upload_speed,
@@ -264,7 +265,7 @@ internal fun ConnectionDetailSheet(
                             Text(
                                 stringResource(
                                     Res.string.speed,
-                                    Libcore.formatBytes(connection.uploadSpeed),
+                                    connection.uploadSpeed.formatBytes(),
                                 )
                             )
                         }
@@ -275,7 +276,7 @@ internal fun ConnectionDetailSheet(
                             Text(
                                 stringResource(
                                     Res.string.speed,
-                                    Libcore.formatBytes(connection.downloadSpeed),
+                                    connection.downloadSpeed.formatBytes(),
                                 )
                             )
                         }
@@ -543,15 +544,17 @@ private fun createRouteDraft(
             }
 
             ConnectionFields.DESTINATION -> {
-                val (dstIp, dstPort) = parseAddress(connection.dst)
-                if (dstIp.isNotBlank()) ip = dstIp
-                if (dstPort.isNotBlank()) port = dstPort
+                splitAddress(connection.dst)?.let { (dstIp, dstPort) ->
+                    ip = dstIp
+                    port = dstPort
+                }
             }
 
             ConnectionFields.SOURCE -> {
-                val (srcIp, srcPort) = parseAddress(connection.src)
-                if (srcIp.isNotBlank()) source = srcIp
-                if (srcPort.isNotBlank()) sourcePort = srcPort
+                splitAddress(connection.src)?.let { (srcIp, srcPort) ->
+                    source = srcIp
+                    sourcePort = srcPort
+                }
             }
 
             ConnectionFields.NETWORK -> {
@@ -587,25 +590,6 @@ private fun createRouteDraft(
         protocol = protocol,
         packages = packages,
     )
-}
-
-private fun parseAddress(address: String): Pair<String, String> {
-    if (address.isBlank()) return "" to ""
-    return if (address.startsWith("[")) {
-        // IPv6
-        val closeBracket = address.indexOf(']')
-        if (closeBracket == -1) return address to ""
-        val ip = address.substring(1, closeBracket)
-        val port = if (closeBracket + 2 < address.length) {
-            address.substring(closeBracket + 2)
-        } else ""
-        ip to port
-    } else {
-        // IPv4
-        val lastColon = address.lastIndexOf(':')
-        if (lastColon == -1) return address to ""
-        address.take(lastColon) to address.substring(lastColon + 1)
-    }
 }
 
 @Preview

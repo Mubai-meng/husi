@@ -1,8 +1,6 @@
 package com.fr.husi.speedtest
 
 import com.fr.husi.database.DataStore
-import com.fr.husi.libcore.Libcore
-import com.fr.husi.libcore.SpeedTestListener
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.channels.trySendBlocking
@@ -39,6 +37,9 @@ import org.koin.mp.KoinPlatform
  *    实例在 :bg 进程内启动，出站被正确 protect —— 与上游
  *    StandaloneURLTest 的放置一致；
  *  - 服务未运行 → 本地 JNI 直跑（无 TUN 干扰，开销最小）。
+ *
+ * 本地 JNI 路径经 [SpeedTestLocalRunner] 下沉到平台层：libcore.aar 只绑
+ * Android，commonMain 不能直接引用 `com.fr.husi.libcore.*`。
  */
 object SpeedTestEngine {
 
@@ -128,10 +129,10 @@ object SpeedTestEngine {
         params: Params,
     ): Flow<Event> = callbackFlow {
         var handle: Int = 0
-        val listener = object : SpeedTestListener {
-            override fun onEvent(event: String) {
+        try {
+            handle = SpeedTestLocalRunner.start(config, params.toJson()) { event ->
                 when (val e = parseEvent(event)) {
-                    null -> return
+                    null -> Unit
                     is Event.Finished -> {
                         trySendBlocking(e)
                         close()
@@ -140,27 +141,29 @@ object SpeedTestEngine {
                     is Event.OnProgress -> trySendBlocking(e)
                 }
             }
-        }
-
-        try {
-            handle = Libcore.speedTestStart(config, params.toJson(), null, listener)
         } catch (e: Throwable) {
+            // AAR 未重绑/会话超限/平台不支持等错误统一收敛为 Done。
             trySendBlocking(
-                // AAR 未重绑/会话超限等错误统一收敛为 Done。
                 Event.Finished(Done(0L, 0L, "", e.readableMessage())),
             )
             close()
             return@callbackFlow
         }
 
+        if (handle <= 0) {
+            trySendBlocking(
+                Event.Finished(Done(0L, 0L, "", "本地测速不可用（libcore 未绑定该平台）")),
+            )
+            close()
+            return@callbackFlow
+        }
+
         awaitClose {
-            if (handle > 0) {
-                // speedTestStop 最长阻塞 35s（等实例关闭），放到 IO 线程，
-                // 不阻塞流的取消路径。
-                stopScope.launch {
-                    runInterruptible(Dispatchers.IO) {
-                        runCatching { Libcore.speedTestStop(handle) }
-                    }
+            // stop 最长阻塞 35s（等实例关闭），放到 IO 线程，
+            // 不阻塞流的取消路径。
+            stopScope.launch {
+                runInterruptible(Dispatchers.IO) {
+                    SpeedTestLocalRunner.stop(handle)
                 }
             }
         }

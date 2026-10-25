@@ -1,6 +1,7 @@
 package com.fr.husi.fmt
 
 import com.fr.husi.Key
+import com.fr.husi.ProtocolProvider
 import com.fr.husi.RuleProvider
 import com.fr.husi.database.AssetEntity
 import com.fr.husi.database.DataStore
@@ -11,10 +12,15 @@ import com.fr.husi.database.RuleEntity
 import com.fr.husi.database.SagerDatabase
 import com.fr.husi.fmt.internal.ChainBean
 import com.fr.husi.fmt.internal.ProxySetBean
+import com.fr.husi.fmt.juicity.JuicityBean
 import com.fr.husi.fmt.mieru.MieruBean
 import com.fr.husi.fmt.openconnect.OpenConnectBean
 import com.fr.husi.fmt.openvpn.OpenVPNBean
+import com.fr.husi.fmt.shadowquic.ShadowQUICBean
+import com.fr.husi.fmt.shadowquic.buildShadowQUICConfig
 import com.fr.husi.fmt.socks.SOCKSBean
+import com.fr.husi.fmt.tailscale.TailcatBean
+import com.fr.husi.fmt.tailscale.TailscaleBean
 import com.fr.husi.ktx.applyDefaultValues
 import com.fr.husi.platform.PlatformInfo
 import com.fr.husi.test.HusiKoinTest
@@ -22,6 +28,7 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.boolean
+import kotlinx.serialization.json.int
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -113,6 +120,42 @@ class ConfigBuilderTest : HusiKoinTest() {
     }
 
     @Test
+    fun `buildConfig should send Tailcat HTTP client through the chain detour`() = runBlocking {
+        val group = ProxyGroup(name = "group").applyDefaultValues()
+        group.id = SagerDatabase.groupDao.createGroup(group)
+
+        val local = createSocksProxy(
+            groupId = group.id,
+            order = 1,
+            name = "local",
+            host = "127.0.0.1",
+            port = 1080,
+        )
+        val tailcat = ProxyEntity(groupId = group.id, userOrder = 2).putBean(
+            TailcatBean().apply {
+                name = "tailcat"
+                serverPublicKey = "nodekey:server"
+                serverDiscoKey = "discokey:server"
+            }.applyDefaultValues(),
+        )
+        tailcat.id = SagerDatabase.proxyDao.addProxy(tailcat)
+        val chain = createChain(
+            groupId = group.id,
+            order = 3,
+            name = "chain",
+            proxies = listOf(local.id, tailcat.id),
+        )
+
+        val outbound = assertNotNull(parseOutbounds(buildConfig(chain))["tailcat"])
+
+        assertEquals("local", outbound["detour"]?.jsonPrimitive?.content)
+        assertEquals(
+            "local",
+            outbound["http_client"]?.jsonObject?.get("detour")?.jsonPrimitive?.content,
+        )
+    }
+
+    @Test
     fun `buildConfig should keep remote DNS domain through detour`() = runBlocking {
         DataStore.remoteDns.set("tcp://dns.example.com")
 
@@ -200,6 +243,53 @@ class ConfigBuilderTest : HusiKoinTest() {
             proxy.id = SagerDatabase.proxyDao.addProxy(proxy)
 
             assertEndpointDNS(buildConfig(proxy), "openvpn", SingBoxOptions.DNS_TYPE_OPENVPN)
+        }
+
+    @Test
+    fun `buildConfig should add endpoint DNS server and preferred rule for Tailscale`() =
+        runBlocking {
+            val group = ProxyGroup(name = "group").applyDefaultValues()
+            group.id = SagerDatabase.groupDao.createGroup(group)
+            val proxy = ProxyEntity(groupId = group.id, userOrder = 1).putBean(
+                TailscaleBean().apply {
+                    name = "tailscale"
+                }.applyDefaultValues(),
+            )
+            proxy.id = SagerDatabase.proxyDao.addProxy(proxy)
+
+            assertEndpointDNS(buildConfig(proxy), "tailscale", SingBoxOptions.DNS_TYPE_TAILSCALE)
+        }
+
+    @Test
+    fun `buildConfig should advertise Fake DNS ranges for Tailscale only while Fake DNS is enabled`() =
+        runBlocking {
+            disableFakeDns()
+            DataStore.networkStrategy.set(SingBoxOptions.STRATEGY_PREFER_IPV6)
+            DataStore.fakeDNSRange4.set("198.51.100.0/24")
+            DataStore.fakeDNSRange6.set("2001:2::/48")
+            val group = ProxyGroup(name = "group").applyDefaultValues()
+            group.id = SagerDatabase.groupDao.createGroup(group)
+            val proxy = ProxyEntity(groupId = group.id, userOrder = 1).putBean(
+                TailscaleBean().apply {
+                    name = "tailscale"
+                    advertiseRoutes = "10.0.0.0/8"
+                    advertiseFakeDNSRoutes = true
+                }.applyDefaultValues(),
+            )
+            proxy.id = SagerDatabase.proxyDao.addProxy(proxy)
+
+            suspend fun advertisedRoutes(): List<String>? = parseEndpoints(buildConfig(proxy))["tailscale"]!!
+                .get("advertise_routes")
+                ?.jsonArray
+                ?.map { it.jsonPrimitive.content }
+
+            assertEquals(listOf("10.0.0.0/8"), advertisedRoutes())
+
+            DataStore.enableFakeDns.set(true)
+            assertEquals(
+                listOf("10.0.0.0/8", "198.51.100.0/24", "2001:2::/48"),
+                advertisedRoutes(),
+            )
         }
 
     @Test
@@ -850,6 +940,128 @@ class ConfigBuilderTest : HusiKoinTest() {
         assertEquals(
             "Missing proxy reference in proxy set ${proxySet.id}: $missingId",
             setError.message,
+        )
+    }
+
+    @Test
+    fun `buildConfig should expand proxy set members without the expanding set`() = runBlocking {
+        val group = ProxyGroup(name = "group").applyDefaultValues()
+        group.id = SagerDatabase.groupDao.createGroup(group)
+        val first = createSocksProxy(
+            groupId = group.id,
+            order = 1,
+            name = "first",
+            host = "1.1.1.1",
+            port = 1080,
+        )
+        val second = createSocksProxy(
+            groupId = group.id,
+            order = 2,
+            name = "second",
+            host = "2.2.2.2",
+            port = 1081,
+        )
+        val auto = createProxySet(
+            groupId = group.id,
+            order = 3,
+            name = "auto",
+            management = ProxySetBean.MANAGEMENT_URLTEST,
+        )
+        val manual = createProxySet(
+            groupId = group.id,
+            order = 4,
+            name = "manual",
+            proxies = listOf(auto.id, first.id, second.id),
+        )
+        auto.proxySetBean!!.providers = listOf(ProxySetBean.Provider.Members(manual.id))
+        SagerDatabase.proxyDao.updateProxy(auto)
+
+        val result = buildConfig(manual, forTest = true)
+        val outbounds = parseOutbounds(result)
+
+        // Each occurrence of a profile gets its own outbound, so compare profile IDs, not tags.
+        fun memberIds(tag: String) = outbounds[tag]!!["outbounds"]!!.jsonArray.map {
+            result.metadata.tagToID.getValue(it.jsonPrimitive.content)
+        }
+        assertEquals(listOf(auto.id, first.id, second.id), memberIds("manual"))
+        assertEquals(listOf(first.id, second.id), memberIds("auto"))
+    }
+
+    @Test
+    fun `buildConfig should expand nested proxy set members transitively`() = runBlocking {
+        val group = ProxyGroup(name = "group").applyDefaultValues()
+        group.id = SagerDatabase.groupDao.createGroup(group)
+        val leaf = createSocksProxy(
+            groupId = group.id,
+            order = 1,
+            name = "leaf",
+            host = "1.1.1.1",
+            port = 1080,
+        )
+        val inner = createProxySet(
+            groupId = group.id,
+            order = 2,
+            name = "inner",
+            proxies = listOf(leaf.id),
+        )
+        val middle = createProxySet(
+            groupId = group.id,
+            order = 3,
+            name = "middle",
+            expandProxySetIds = listOf(inner.id),
+        )
+        val outer = createProxySet(
+            groupId = group.id,
+            order = 4,
+            name = "outer",
+            expandProxySetIds = listOf(middle.id),
+        )
+
+        val result = buildConfig(outer, forTest = true)
+        val outbounds = parseOutbounds(result)
+
+        assertEquals(
+            listOf("leaf"),
+            outbounds["outer"]!!["outbounds"]!!.jsonArray.map { it.jsonPrimitive.content },
+        )
+        assertTrue("inner" !in outbounds && "middle" !in outbounds)
+    }
+
+    @Test
+    fun `buildConfig should report circular and missing proxy set expansions`() = runBlocking {
+        val group = ProxyGroup(name = "group").applyDefaultValues()
+        group.id = SagerDatabase.groupDao.createGroup(group)
+        val first = createProxySet(groupId = group.id, order = 1, name = "first")
+        val second = createProxySet(
+            groupId = group.id,
+            order = 2,
+            name = "second",
+            expandProxySetIds = listOf(first.id),
+        )
+        first.proxySetBean!!.providers = listOf(ProxySetBean.Provider.Members(second.id))
+        SagerDatabase.proxyDao.updateProxy(first)
+
+        val circularError = assertFailsWith<IllegalStateException> {
+            buildConfig(first, forTest = true)
+        }
+        assertEquals(
+            "Circular proxy set expansion: ${first.id} -> ${second.id} -> ${first.id}",
+            circularError.message,
+        )
+
+        val missingId = Long.MAX_VALUE
+        val dangling = createProxySet(
+            groupId = group.id,
+            order = 3,
+            name = "dangling",
+            expandProxySetIds = listOf(missingId),
+        )
+        val missingError = assertFailsWith<IllegalStateException> {
+            buildConfig(dangling, forTest = true)
+        }
+        assertEquals(
+            "Missing proxy set reference in proxy set ${dangling.id}: $missingId",
+            missingError.message,
         )
     }
 
@@ -2013,6 +2225,9 @@ class ConfigBuilderTest : HusiKoinTest() {
             port = 1080,
         )
 
+        createClashModeRule(RuleEntity.MODE_GLOBAL, RuleEntity.OUTBOUND_PROXY)
+        createClashModeRule(RuleEntity.MODE_DIRECT, RuleEntity.OUTBOUND_DIRECT)
+
         val result = buildConfig(proxy)
         val dnsServers = parseDnsServers(result)
         val dnsRules = parseDnsRules(result)
@@ -2030,12 +2245,12 @@ class ConfigBuilderTest : HusiKoinTest() {
             it["clash_mode"]?.jsonPrimitive?.content == RuleEntity.MODE_GLOBAL
         }
         assertEquals(TAG_DNS_REMOTE, globalRule["server"]?.jsonPrimitive?.content)
-        assertEquals(null, globalRule["action"])
+        assertEquals(SingBoxOptions.ACTION_ROUTE, globalRule["action"]?.jsonPrimitive?.content)
         val directRule = dnsRules.first {
             it["clash_mode"]?.jsonPrimitive?.content == RuleEntity.MODE_DIRECT
         }
         assertEquals(TAG_DNS_DIRECT, directRule["server"]?.jsonPrimitive?.content)
-        assertEquals(null, directRule["action"])
+        assertEquals(SingBoxOptions.ACTION_ROUTE, directRule["action"]?.jsonPrimitive?.content)
     }
 
     @Test
@@ -2053,6 +2268,7 @@ class ConfigBuilderTest : HusiKoinTest() {
             host = "1.1.1.1",
             port = 1080,
         )
+        createClashModeRule(RuleEntity.MODE_GLOBAL, RuleEntity.OUTBOUND_PROXY)
 
         val result = buildConfig(proxy)
         val dnsServers = parseDnsServers(result)
@@ -2103,6 +2319,7 @@ class ConfigBuilderTest : HusiKoinTest() {
             host = "proxy.example.com",
             port = 1080,
         )
+        createClashModeRule(RuleEntity.MODE_DIRECT, RuleEntity.OUTBOUND_DIRECT)
 
         val result = buildConfig(proxy)
         val dnsServers = parseDnsServers(result)
@@ -2629,6 +2846,199 @@ class ConfigBuilderTest : HusiKoinTest() {
             rule["domain"]?.jsonArray?.any { it.jsonPrimitive.content == domain } == true
         }
 
+    @Test
+    fun `buildConfig should point a mapped shadowquic plugin at its mapping inbound`() = runBlocking {
+        val group = ProxyGroup(name = "group").applyDefaultValues()
+        group.id = SagerDatabase.groupDao.createGroup(group)
+
+        val proxy = ProxyEntity(groupId = group.id, userOrder = 1).putBean(
+            ShadowQUICBean().apply {
+                name = "shadowquic"
+                serverAddress = "server.example.com"
+                serverPort = 8443
+            }.applyDefaultValues(),
+        )
+        proxy.id = SagerDatabase.proxyDao.addProxy(proxy)
+
+        // The URL test instance always routes plugins through a mapping inbound.
+        val result = buildConfig(proxy, forTest = true)
+        val mapping = parseInbounds(result).single {
+            it["tag"]?.jsonPrimitive?.content == "c-0-mapping-${proxy.id}"
+        }
+        val mappingPort = mapping["listen_port"]!!.jsonPrimitive.int
+        val bean = result.metadata.externalIndex
+            .flatMap { it.chain.values }
+            .single { it.id == proxy.id }
+            .requireBean() as ShadowQUICBean
+        val outbound = Json.parseToJsonElement(bean.buildShadowQUICConfig(PLUGIN_PORT, false, 0))
+            .jsonObject["outbound"]!!.jsonObject
+
+        assertEquals("$LOCALHOST4:$mappingPort", outbound["addr"]?.jsonPrimitive?.content)
+        assertEquals("server.example.com", outbound["server-name"]?.jsonPrimitive?.content)
+        val override = parseRouteRules(result).single {
+            it["inbound"]?.jsonArray?.singleOrNull()?.jsonPrimitive?.content == mapping["tag"]!!.jsonPrimitive.content &&
+                it["override_address"] != null
+        }
+        assertEquals("server.example.com", override["override_address"]?.jsonPrimitive?.content)
+        assertEquals(8443, override["override_port"]?.jsonPrimitive?.int)
+    }
+
+    @Test
+    fun `buildConfig should let a first-hop juicity plugin protect its sockets under VPN`() = runBlocking {
+        DataStore.serviceMode.set(Key.MODE_VPN)
+        usePluginForJuicity()
+
+        val group = ProxyGroup(name = "group").applyDefaultValues()
+        group.id = SagerDatabase.groupDao.createGroup(group)
+        val proxy = createJuicityProxy(groupId = group.id, order = 1)
+
+        val result = buildConfig(proxy)
+        val pluginPort = result.metadata.externalIndex.single().chain.keys.single()
+
+        if (PlatformInfo.isAndroid || PlatformInfo.isLinux) {
+            assertEquals(setOf(pluginPort), result.metadata.protectedPluginPorts)
+            assertTrue(parseInbounds(result).none { it["tag"]?.jsonPrimitive?.content == "c-0-mapping-${proxy.id}" })
+        } else {
+            assertTrue(result.metadata.protectedPluginPorts.isEmpty())
+            assertTrue(parseInbounds(result).any { it["tag"]?.jsonPrimitive?.content == "c-0-mapping-${proxy.id}" })
+        }
+    }
+
+    @Test
+    fun `buildConfig should run the protect service under VPN`() = runBlocking {
+        DataStore.serviceMode.set(Key.MODE_VPN)
+
+        val group = ProxyGroup(name = "group").applyDefaultValues()
+        group.id = SagerDatabase.groupDao.createGroup(group)
+        val proxy = createSocksProxy(
+            groupId = group.id,
+            order = 1,
+            name = "main",
+            host = "1.1.1.1",
+            port = 1080,
+        )
+
+        val protectServices = parseServicesOrEmpty(buildConfig(proxy)).filter {
+            it["type"]?.jsonPrimitive?.content == SingBoxOptions.TYPE_PROTECT
+        }
+
+        assertEquals(protectPath, protectServices.single()["path"]?.jsonPrimitive?.content)
+    }
+
+    @Test
+    fun `buildConfig should verify protect peers unless apps may bypass the VPN`() = runBlocking {
+        DataStore.serviceMode.set(Key.MODE_VPN)
+
+        val group = ProxyGroup(name = "group").applyDefaultValues()
+        group.id = SagerDatabase.groupDao.createGroup(group)
+        val proxy = createSocksProxy(
+            groupId = group.id,
+            order = 1,
+            name = "main",
+            host = "1.1.1.1",
+            port = 1080,
+        )
+
+        suspend fun verifyPeer(allowAppsBypassVpn: Boolean): Boolean? {
+            DataStore.allowAppsBypassVpn.set(allowAppsBypassVpn)
+            return parseServicesOrEmpty(buildConfig(proxy)).single {
+                it["type"]?.jsonPrimitive?.content == SingBoxOptions.TYPE_PROTECT
+            }["verify_peer"]?.jsonPrimitive?.boolean
+        }
+
+        assertEquals(true, verifyPeer(allowAppsBypassVpn = false))
+        assertEquals(false, verifyPeer(allowAppsBypassVpn = true))
+    }
+
+    @Test
+    fun `buildConfig should map a juicity plugin that continues into a chain`() = runBlocking {
+        DataStore.serviceMode.set(Key.MODE_VPN)
+        usePluginForJuicity()
+
+        val group = ProxyGroup(name = "group").applyDefaultValues()
+        group.id = SagerDatabase.groupDao.createGroup(group)
+        val juicity = createJuicityProxy(groupId = group.id, order = 1)
+        val firstHop = createSocksProxy(
+            groupId = group.id,
+            order = 2,
+            name = "first-hop",
+            host = "2.2.2.2",
+            port = 1080,
+        )
+        val chain = createChain(
+            groupId = group.id,
+            order = 3,
+            name = "main-chain",
+            // The first hop dials the server; juicity reaches it through the first hop.
+            proxies = listOf(firstHop.id, juicity.id),
+        )
+
+        val result = buildConfig(chain)
+
+        // Its traffic goes through the mapping inbound to the next hop, so it must not bypass the VPN.
+        assertTrue(result.metadata.protectedPluginPorts.isEmpty())
+        val bean = result.metadata.externalIndex.single().chain.values.single().requireBean()
+        assertEquals(LOCALHOST4, bean.finalAddress)
+    }
+
+    @Test
+    fun `buildConfig should map a plugin whose protect client is Android-only off Android under VPN`() = runBlocking {
+        DataStore.serviceMode.set(Key.MODE_VPN)
+
+        val group = ProxyGroup(name = "group").applyDefaultValues()
+        group.id = SagerDatabase.groupDao.createGroup(group)
+        val proxy = ProxyEntity(groupId = group.id, userOrder = 1).putBean(
+            MieruBean().apply {
+                name = "mieru"
+                serverAddress = "1.1.1.1"
+                serverPort = 8964
+            }.applyDefaultValues(),
+        )
+        proxy.id = SagerDatabase.proxyDao.addProxy(proxy)
+
+        val result = buildConfig(proxy)
+        val bean = result.metadata.externalIndex.single().chain.values.single().requireBean()
+
+        if (PlatformInfo.isAndroid) {
+            assertEquals(1, result.metadata.protectedPluginPorts.size)
+            assertEquals("1.1.1.1", bean.finalAddress)
+        } else {
+            assertTrue(result.metadata.protectedPluginPorts.isEmpty())
+            assertEquals(LOCALHOST4, bean.finalAddress)
+        }
+    }
+
+    private suspend fun usePluginForJuicity() {
+        DataStore.providerJuicity.set(ProtocolProvider.PLUGIN)
+        // juicity falls back to the core with fake DNS: https://github.com/juicity/juicity/issues/140
+        disableFakeDns()
+    }
+
+    private suspend fun createJuicityProxy(groupId: Long, order: Long): ProxyEntity {
+        val proxy = ProxyEntity(groupId = groupId, userOrder = order).putBean(
+            JuicityBean().apply {
+                name = "juicity"
+                serverAddress = "1.1.1.1"
+                serverPort = 443
+                uuid = "00000000-0000-0000-0000-000000000000"
+                password = "password"
+            }.applyDefaultValues(),
+        )
+        proxy.id = SagerDatabase.proxyDao.addProxy(proxy)
+        return proxy
+    }
+
+    private fun parseServicesOrEmpty(result: ConfigBuildResult) =
+        Json.parseToJsonElement(result.configJson).jsonObject["services"]
+            ?.jsonArray
+            ?.map { it.jsonObject }
+            .orEmpty()
+
+    private fun parseInbounds(result: ConfigBuildResult) =
+        Json.parseToJsonElement(result.configJson).jsonObject["inbounds"]!!
+            .jsonArray
+            .map { it.jsonObject }
+
     private fun parseOutbounds(result: ConfigBuildResult) =
         Json.parseToJsonElement(result.configJson).jsonObject["outbounds"]!!
             .jsonArray
@@ -2655,6 +3065,17 @@ class ConfigBuilderTest : HusiKoinTest() {
     private fun parseDnsFinal(result: ConfigBuildResult) =
         Json.parseToJsonElement(result.configJson).jsonObject["dns"]!!
             .jsonObject["final"]!!.jsonPrimitive.content
+
+    private suspend fun createClashModeRule(mode: String, outbound: Long) {
+        ProfileManager.createRule(
+            RuleEntity(
+                enabled = true,
+                name = "clash-mode-$mode",
+                clashMode = mode,
+                outbound = outbound,
+            ),
+        )
+    }
 
     private fun assertRaceBlock(rules: List<JsonObject>, tags: List<String>) {
         assertEquals(tags.size * 2, rules.size)
@@ -2830,6 +3251,7 @@ class ConfigBuilderTest : HusiKoinTest() {
         management: Int = ProxySetBean.MANAGEMENT_SELECTOR,
         collectGroupId: Long = 0L,
         filterNotRegex: String = "",
+        expandProxySetIds: List<Long> = emptyList(),
     ): ProxyEntity {
         val proxySet = ProxyEntity(groupId = groupId, userOrder = order).putBean(
             ProxySetBean().apply {
@@ -2841,6 +3263,9 @@ class ConfigBuilderTest : HusiKoinTest() {
                     }
                     if (collectGroupId > 0L) {
                         add(ProxySetBean.Provider.Group(collectGroupId, filterNotRegex))
+                    }
+                    for (proxySetId in expandProxySetIds) {
+                        add(ProxySetBean.Provider.Members(proxySetId))
                     }
                 }
             }.applyDefaultValues(),
@@ -2866,3 +3291,6 @@ class ConfigBuilderTest : HusiKoinTest() {
         return proxy
     }
 }
+
+// Local SOCKS port the plugin listens on; irrelevant to where it dials.
+private const val PLUGIN_PORT = 1080

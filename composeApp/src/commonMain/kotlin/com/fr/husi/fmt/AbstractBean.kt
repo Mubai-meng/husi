@@ -4,8 +4,8 @@ import kotlinx.serialization.Serializable as KxsSerializable
 import com.fr.husi.io.BinaryInput
 import com.fr.husi.io.BinaryOutput
 import com.fr.husi.ktx.isIpAddress
+import com.fr.husi.ktx.joinAddress
 import com.fr.husi.ktx.unwrapIPV6Host
-import com.fr.husi.ktx.wrapIPV6Host
 
 @KxsSerializable
 abstract class AbstractBean : Serializable() {
@@ -33,7 +33,15 @@ abstract class AbstractBean : Serializable() {
     }
 
     open fun displayAddress(): String {
-        return "${serverAddress.wrapIPV6Host()}:$serverPort"
+        return joinAddress(serverAddress, serverPort)
+    }
+
+    fun pluginDialAddress(): String {
+        return joinAddress(finalAddress, finalPort)
+    }
+
+    fun pluginServerName(sni: String): String {
+        return sni.ifBlank { serverAddress }
     }
 
     open fun network(): String {
@@ -45,6 +53,7 @@ abstract class AbstractBean : Serializable() {
     open val needUDPOverTCP get() = false
     open val canMapping get() = true
 
+    /** Whether the plugin built for this platform can hand its sockets to the protect service. */
     open val canSelfProtect get() = false
 
     open fun isInsecure(): ValidateResult {

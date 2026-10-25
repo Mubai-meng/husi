@@ -1,6 +1,7 @@
 package com.fr.husi.bg
 
 import com.google.protobuf.ByteString
+import com.fr.husi.PLUGIN_CA_FILE
 import com.fr.husi.database.DataStore
 import com.fr.husi.fmt.ConfigMetadata
 import com.fr.husi.fmt.hysteria.HysteriaBean
@@ -14,7 +15,6 @@ import com.fr.husi.fmt.naive.buildNaiveConfig
 import com.fr.husi.fmt.protectPath
 import com.fr.husi.fmt.shadowquic.ShadowQUICBean
 import com.fr.husi.fmt.shadowquic.buildShadowQUICConfig
-import com.fr.husi.libcore.Libcore
 import com.fr.husi.platform.PlatformInfo
 import com.fr.husi.plugin.PluginManager
 import com.fr.husi.proto.v1.PluginProcessSpec
@@ -25,15 +25,14 @@ import java.io.File
 
 fun initPlugins(
     metadata: ConfigMetadata,
-    isVPN: Boolean,
     cacheFiles: MutableList<File>,
 ): Map<Int, Pair<Int, String>> {
     val repository = resolveRepository()
     val pluginConfigs = hashMapOf<Int, Pair<Int, String>>()
     val logLevel = DataStore.logLevel.getBlocking()
-    val shouldProtect = isVPN && PlatformInfo.isAndroid
     for ((chain) in metadata.externalIndex) {
         chain.entries.forEach { (port, profile) ->
+            val shouldProtect = port in metadata.protectedPluginPorts
             when (val bean = profile.requireBean()) {
                 is MieruBean -> {
                     PluginManager.init("mieru-plugin")
@@ -83,15 +82,13 @@ fun initPlugins(
 fun buildPluginSpecs(
     metadata: ConfigMetadata,
     pluginConfigs: Map<Int, Pair<Int, String>>,
-    isVPN: Boolean,
 ): List<PluginProcessSpec> {
     val repository = resolveRepository()
-    val shouldProtect = isVPN && PlatformInfo.isAndroid
     val logLevel = DataStore.logLevel.getBlocking()
     val specs = ArrayList<PluginProcessSpec>()
 
     val sharedEnv = linkedMapOf<String, String>()
-    repository.externalAssetsDir.resolve(Libcore.PluginCaFile)
+    repository.externalAssetsDir.resolve(PLUGIN_CA_FILE)
         .takeIf { it.isFile }
         ?.absolutePath
         ?.let { sharedEnv["SSL_CERT_FILE"] = it }
@@ -105,7 +102,7 @@ fun buildPluginSpecs(
             val spec = when (bean) {
                 is MieruBean -> {
                     val configName = "mieru_$port.json"
-                    if (shouldProtect) {
+                    if (port in metadata.protectedPluginPorts) {
                         env["MIERU_PROTECT_PATH"] = protectPath
                     }
                     env["MIERU_CONFIG_JSON_FILE"] = pluginFileToken(configName)

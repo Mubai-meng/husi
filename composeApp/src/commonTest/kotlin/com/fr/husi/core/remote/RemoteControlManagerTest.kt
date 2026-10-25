@@ -1,5 +1,7 @@
 package com.fr.husi.core.remote
 
+import com.fr.husi.bg.BackendState
+import com.fr.husi.bg.ServiceState
 import com.fr.husi.core.CoreRpcException
 import com.fr.husi.database.DataStore
 import com.fr.husi.database.RemoteServer
@@ -7,6 +9,7 @@ import com.fr.husi.database.RemoteServerEntity
 import com.fr.husi.proto.daemon.Version
 import com.fr.husi.test.FakeCoreClient
 import com.fr.husi.test.HusiKoinMainDispatcherTest
+import io.github.xchacha20_poly1305.kurpc.Status
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.Flow
@@ -15,6 +18,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
+import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -34,6 +38,11 @@ class RemoteControlManagerTest : HusiKoinMainDispatcherTest() {
 
     private val localClient = FakeCoreClient()
     private val dao = FakeRemoteServerDao()
+
+    @AfterTest
+    fun resetBackendState() {
+        BackendState.reset()
+    }
 
     private fun newManager(
         factory: RemoteClientFactory,
@@ -87,7 +96,7 @@ class RemoteControlManagerTest : HusiKoinMainDispatcherTest() {
     @Test
     fun `failed first probe falls back to local and reports connect failure`() = runTest(dispatcher.scheduler) {
         val remote = FakeCoreClient()
-        remote.probeThrowable = CoreRpcException("Unavailable", "down")
+        remote.probeThrowable = CoreRpcException(Status.Code.UNAVAILABLE, "down")
         val manager = newManager({ _, _ -> remote })
         try {
             runCurrent()
@@ -120,7 +129,7 @@ class RemoteControlManagerTest : HusiKoinMainDispatcherTest() {
             assertEquals(RemoteSessionState.CONNECTED, manager.session.value?.state)
 
             val failure = backgroundScope.async { manager.failures.first() }
-            remote.probeThrowable = CoreRpcException("Unavailable", "down")
+            remote.probeThrowable = CoreRpcException(Status.Code.UNAVAILABLE, "down")
             advanceTimeBy(100.milliseconds)
             runCurrent()
             val probeCallsAtFailure = remote.probeCalls
@@ -136,6 +145,35 @@ class RemoteControlManagerTest : HusiKoinMainDispatcherTest() {
             manager.close()
         }
     }
+
+    @Test
+    fun `runningTarget follows the local service and the connected remote session`() =
+        runTest(dispatcher.scheduler) {
+            val remote = FakeCoreClient()
+            val manager = newManager({ _, _ -> remote })
+            try {
+                runCurrent()
+                assertNull(manager.runningTarget.value)
+
+                BackendState.updateState(ServiceState.Connecting)
+                runCurrent()
+                assertEquals(CoreTarget(localClient), manager.runningTarget.value)
+
+                manager.enterRemote(server())
+                runCurrent()
+                assertEquals(CoreTarget(remote, remoteServerId = 1L), manager.runningTarget.value)
+
+                manager.exitRemote()
+                runCurrent()
+                assertEquals(CoreTarget(localClient), manager.runningTarget.value)
+
+                BackendState.updateState(ServiceState.Stopped)
+                runCurrent()
+                assertNull(manager.runningTarget.value)
+            } finally {
+                manager.close()
+            }
+        }
 
     @Test
     fun `exitRemote closes remote client and restores local`() = runTest(dispatcher.scheduler) {
@@ -230,7 +268,7 @@ class RemoteControlManagerTest : HusiKoinMainDispatcherTest() {
     @Test
     fun `testConnection surfaces probe failure`() = runTest(dispatcher.scheduler) {
         val probeClient = FakeCoreClient().also {
-            it.probeThrowable = CoreRpcException("Unauthenticated", "invalid authorization")
+            it.probeThrowable = CoreRpcException(Status.Code.UNAUTHENTICATED, "invalid authorization")
         }
         val manager = newManager({ _, _ -> probeClient })
         try {

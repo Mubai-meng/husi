@@ -56,6 +56,7 @@ import com.fr.husi.logLevelString
 import com.fr.husi.platform.PlatformInfo
 import com.fr.husi.repository.resolveRepository
 import com.fr.husi.resources.Res
+import com.fr.husi.resources.allow_apps_bypass_vpn
 import com.fr.husi.resources.always_show_address
 import com.fr.husi.resources.always_show_address_sum
 import com.fr.husi.resources.auto
@@ -75,6 +76,8 @@ import com.fr.husi.resources.insecure_warn
 import com.fr.husi.resources.language
 import com.fr.husi.resources.language_system_default
 import com.fr.husi.resources.log_level
+import com.fr.husi.resources.log_terminal_mode
+import com.fr.husi.resources.log_terminal_mode_sum
 import com.fr.husi.resources.long_click_to_see_name
 import com.fr.husi.resources.max_log_line
 import com.fr.husi.resources.mtu
@@ -91,8 +94,10 @@ import com.fr.husi.resources.show_direct_speed_sum
 import com.fr.husi.resources.shutter_speed
 import com.fr.husi.resources.speed
 import com.fr.husi.resources.speed_interval
+import com.fr.husi.resources.terminal
 import com.fr.husi.resources.theme
 import com.fr.husi.resources.traffic
+import com.fr.husi.resources.transform
 import com.fr.husi.resources.transgender
 import com.fr.husi.resources.translate
 import com.fr.husi.resources.wb_sunny
@@ -340,6 +345,18 @@ internal fun GeneralSettingsGroup(
         summary = { Text(mtuValue.toString()) },
         valueToText = { it.toString() },
     )
+    val bypassValue by DataStore.allowAppsBypassVpn.collectAsStateWithLifecycle()
+    SwitchPreference(
+        value = bypassValue,
+        onValueChange = {
+            DataStore.allowAppsBypassVpn.setBlocking(it)
+            needReload()
+        },
+        title = { Text(stringResource(Res.string.allow_apps_bypass_vpn)) },
+        icon = {
+            MaskedIcon(Res.drawable.transform, color = IconMaskColors.IconCyan)
+        },
+    )
     PlatformGeneralOptions(needReload)
 
     fun speedIntervalText(ms: Int): StringOrRes = when (ms) {
@@ -479,6 +496,20 @@ internal fun GeneralSettingsGroup(
             )
         },
         valueText = { Text(previewValue.toInt().toString()) },
+    )
+
+    val logTerminalModeValue by DataStore.logTerminalMode.collectAsStateWithLifecycle()
+    SwitchPreference(
+        value = logTerminalModeValue,
+        onValueChange = { DataStore.logTerminalMode.setBlocking(it) },
+        title = { Text(stringResource(Res.string.log_terminal_mode)) },
+        icon = {
+            MaskedIcon(
+                Res.drawable.terminal,
+                color = IconMaskColors.IconCyan,
+            )
+        },
+        summary = { Text(stringResource(Res.string.log_terminal_mode_sum)) },
     )
     if (isExpertState) {
         val debugListenValue by DataStore.debugListen.collectAsStateWithLifecycle()

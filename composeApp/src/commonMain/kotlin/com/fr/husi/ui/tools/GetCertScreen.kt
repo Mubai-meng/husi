@@ -77,7 +77,7 @@ import com.fr.husi.resources.get_cert
 import com.fr.husi.resources.get_cert_server_hint
 import com.fr.husi.resources.ok
 import com.fr.husi.resources.protocol
-import com.fr.husi.resources.route_proxy
+import com.fr.husi.resources.proxy
 import com.fr.husi.resources.sni
 import com.fr.husi.resources.start
 import com.fr.husi.ui.LocalSnackbarEmitter
@@ -217,7 +217,7 @@ private fun GetCertContent(
                     OutlinedTextField(
                         value = uiState.proxy,
                         onValueChange = { viewModel.setProxy(it) },
-                        label = { Text(stringResource(Res.string.route_proxy)) },
+                        label = { Text(stringResource(Res.string.proxy)) },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth(),
                     )

@@ -5,7 +5,8 @@ import com.fr.husi.fmt.BeanConverters
 import com.fr.husi.fmt.ValidateResult
 import com.fr.husi.io.BinaryInput
 import com.fr.husi.io.BinaryOutput
-import com.fr.husi.ktx.wrapIPV6Host
+import com.fr.husi.ktx.joinAddress
+import com.fr.husi.platform.PlatformInfo
 import com.fr.husi.resources.Res
 import com.fr.husi.resources.warn_hysteria_legacy
 import com.fr.husi.resources.warn_insecure
@@ -95,7 +96,7 @@ class HysteriaBean : AbstractBean() {
     var initialPacketSize: Int = 0
 
     override val canMapping get() = protocol != PROTOCOL_FAKETCP
-    override val canSelfProtect get() = true
+    override val canSelfProtect get() = PlatformInfo.isAndroid || PlatformInfo.isLinux
 
     override fun initializeDefaultValues() {
         super.initializeDefaultValues()
@@ -275,7 +276,7 @@ class HysteriaBean : AbstractBean() {
         }
 
     override fun displayAddress(): String {
-        return "${serverAddress.wrapIPV6Host()}:$serverPorts"
+        return joinAddress(serverAddress, serverPorts)
     }
 
     override fun clone(): HysteriaBean {

@@ -2,6 +2,18 @@ package com.fr.husi
 
 const val HUSI_REPOSITORY = "xchacha20-poly1305/husi"
 
+/** Well-known UDS name under the core host dir (mirrors coresvc.Socket). */
+const val CORE_SOCKET_NAME = "api.sock"
+
+/**
+ * PEM of the roots the user's certificate provider selects, under the external assets dir
+ * (mirrors libcore.PluginCaFile). Plugins get it as `SSL_CERT_FILE`, and the remote control
+ * client trusts exactly these roots.
+ */
+const val PLUGIN_CA_FILE = "plugin-ca.pem"
+
+const val LOG_FILE_NAME = "stderr.log"
+
 const val CONNECTION_TEST_URL = "http://cp.cloudflare.com/"
 const val NETWORK_QUALITY_CONFIG_URL = "https://mensura.cdn-apple.com/api/v1/gm/config"
 
@@ -93,6 +105,7 @@ object Key {
     const val TCP_KEEP_ALIVE_INTERVAL_0 = "tcpKeepAliveInterval0"
     const val LOG_LEVEL = "logLevel"
     const val LOG_MAX_LINE = "logMaxLine"
+    const val LOG_TERMINAL_MODE = "logTerminalMode"
     const val MTU = "mtu"
     const val VPN_SESSION_NAME = "vpnSessionName"
     const val TUN_INTERFACE_NAME = "tunInterfaceName"
@@ -140,6 +153,12 @@ object Key {
     const val APP_UPDATE_USE_SHIZUKU = "appUpdateUseShizuku"
     const val APP_UPDATE_LAST_CHECK_EPOCH_DAY = "appUpdateLastCheckEpochDay"
     const val APP_UPDATE_SKIPPED_VERSION = "appUpdateSkippedVersion"
+
+    const val WEBDAV_URL = "webdavURL"
+    const val WEBDAV_USERNAME = "webdavUsername"
+    const val WEBDAV_PASSWORD = "webdavPassword"
+
+    const val TAILSCALE_SSH_LOGINS = "tailscaleSSHLogins"
 
     const val NETWORK_QUALITY_CONFIG_URL = "networkQualityConfigURL"
     const val NETWORK_QUALITY_SERIAL = "networkQualitySerial"

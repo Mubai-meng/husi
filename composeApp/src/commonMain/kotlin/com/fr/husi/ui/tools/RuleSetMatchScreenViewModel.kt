@@ -6,10 +6,9 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.fr.husi.bg.routeCustomGeoDir
 import com.fr.husi.bg.routeGeoDir
+import com.fr.husi.core.CoreClient
 import com.fr.husi.ktx.Logs
-import com.fr.husi.ktx.invariantPathString
 import com.fr.husi.ktx.readableMessage
-import com.fr.husi.libcore.Libcore
 import com.fr.husi.repository.resolveRepository
 import com.fr.husi.resources.*
 import com.fr.husi.ui.StringOrRes
@@ -20,6 +19,7 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import org.koin.core.context.GlobalContext
 
 @Immutable
 internal data class RuleSetMatchUiState(
@@ -34,7 +34,9 @@ internal sealed interface RuleSetMatchUiEvent {
 }
 
 @Stable
-internal class RuleSetMatchScreenViewModel : ViewModel() {
+internal class RuleSetMatchScreenViewModel(
+    private val coreClient: CoreClient = GlobalContext.get().get(),
+) : ViewModel() {
     val uiState: StateFlow<RuleSetMatchUiState>
         field = MutableStateFlow(RuleSetMatchUiState())
 
@@ -57,10 +59,9 @@ internal class RuleSetMatchScreenViewModel : ViewModel() {
                 routeCustomGeoDir(externalAssetsDir),
             )
             for (dir in ruleSetDirs) {
-                Libcore.scanRuleSet(dir.invariantPathString(), keyword) { name ->
-                    uiState.update { state ->
-                        state.copy(matched = state.matched + name)
-                    }
+                val names = coreClient.matchRuleSets(dir, keyword)
+                uiState.update { state ->
+                    state.copy(matched = state.matched + names)
                 }
             }
             if (uiState.value.matched.isEmpty()) {

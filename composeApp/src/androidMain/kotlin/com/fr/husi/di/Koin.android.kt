@@ -7,6 +7,12 @@ import com.fr.husi.compose.material3.standardPlatformMaterialApi
 import com.fr.husi.compose.theme.PlatformThemeApi
 import com.fr.husi.compose.theme.TvPlatformThemeApi
 import com.fr.husi.compose.theme.standardPlatformThemeApi
+import com.fr.husi.net.BackgroundProcessHttpFetcher
+import com.fr.husi.net.BackgroundProcessWebDAVClient
+import com.fr.husi.net.GrpcHttpFetcher
+import com.fr.husi.net.GrpcWebDAVClient
+import com.fr.husi.net.HttpFetcher
+import com.fr.husi.net.WebDAVClient
 import com.fr.husi.repository.AndroidRepository
 import com.fr.husi.repository.Repository
 import com.fr.husi.repository.resolveRepository
@@ -47,6 +53,13 @@ internal actual fun platformRepositoryModule(repository: Repository): Module = m
     }
 }
 
-internal actual fun platformKoinModules(): List<Module> = listOf(androidNavigationModule)
+private val androidHttpModule = module {
+    single<HttpFetcher> { BackgroundProcessHttpFetcher(GrpcHttpFetcher(coreClient = get())) }
+    single<WebDAVClient> { BackgroundProcessWebDAVClient(GrpcWebDAVClient(coreClient = get())) }
+}
 
-internal actual fun coreClientBasePath(repository: Repository): String? = null
+internal actual fun platformKoinModules(): List<Module> =
+    listOf(androidNavigationModule, androidHttpModule)
+
+internal actual fun coreClientBasePath(repository: Repository): String =
+    (repository as AndroidRepository).context.filesDir.path

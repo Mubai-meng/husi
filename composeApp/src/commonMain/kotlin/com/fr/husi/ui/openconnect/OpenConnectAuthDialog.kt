@@ -21,10 +21,10 @@ import com.fr.husi.compose.VerticalScrollColumn
 import com.fr.husi.compose.WindowedDialog
 import com.fr.husi.compose.material3.Text
 import com.fr.husi.resources.Res
-import com.fr.husi.resources.auth_later
 import com.fr.husi.resources.auth_open_url
 import com.fr.husi.resources.auth_submit
 import com.fr.husi.resources.auth_verifying
+import com.fr.husi.resources.later
 import com.fr.husi.resources.openconnect_authentication
 import com.fr.husi.ui.AuthDialogWindowSize
 import com.fr.husi.ui.LocalSnackbarEmitter
@@ -114,7 +114,7 @@ fun OpenConnectAuthDialog(
         windowSize = AuthDialogWindowSize,
         buttons = {
             val snackbar = LocalSnackbarEmitter.current
-            TextButton(stringResource(Res.string.auth_later), onClick = ::dismiss)
+            TextButton(stringResource(Res.string.later), onClick = ::dismiss)
             if (!submitted) {
                 if (browser != null) {
                     TextButton(stringResource(Res.string.auth_open_url)) {

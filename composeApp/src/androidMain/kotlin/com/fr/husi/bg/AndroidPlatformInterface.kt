@@ -5,9 +5,11 @@ import android.net.NetworkCapabilities
 import android.os.Build
 import android.os.Build.VERSION.SDK_INT
 import android.os.Process
+import android.provider.Settings
 import android.system.OsConstants
-import androidx.annotation.RequiresApi
 import com.fr.husi.ktx.Logs
+import com.fr.husi.ktx.blankAsNull
+import com.fr.husi.ktx.defaultOr
 import com.fr.husi.ktx.toPrefix
 import com.fr.husi.ktx.toStringIterator
 import com.fr.husi.libcore.ConnectionOwner
@@ -21,6 +23,7 @@ import com.fr.husi.repository.resolveAndroidRepository
 import com.fr.husi.utils.PackageCache
 import java.net.InetSocketAddress
 import java.net.NetworkInterface
+import java.util.*
 import com.fr.husi.libcore.NetworkInterface as LibcoreNetworkInterface
 
 class AndroidPlatformInterface : PlatformInterface {
@@ -44,9 +47,6 @@ class AndroidPlatformInterface : PlatformInterface {
         return ServiceRegistry.vpnService!!.startVpn()
     }
 
-    override fun useProcFS(): Boolean = SDK_INT < Build.VERSION_CODES.Q
-
-    @RequiresApi(Build.VERSION_CODES.Q)
     override fun findConnectionOwner(
         ipProtocol: Int,
         sourceAddress: String,
@@ -57,13 +57,23 @@ class AndroidPlatformInterface : PlatformInterface {
         // 内核查不到属主是常态竞态（短命 UDP/DNS 流、TCP 已关闭），
         // 连接列表每条都会查一次，刷 ERROR 日志没有价值 —— 只抛错给
         // Go 侧按 not-found 处理（2026-10-04 日志：2 秒内 30+ 条）。
-        val uid = resolveAndroidRepository().connectivity.getConnectionOwnerUid(
-            ipProtocol,
-            InetSocketAddress(sourceAddress, sourcePort),
-            InetSocketAddress(destinationAddress, destinationPort),
-        )
-        if (uid == Process.INVALID_UID) error("android: connection owner not found")
         try {
+            val uid = if (SDK_INT >= Build.VERSION_CODES.Q) {
+                resolveAndroidRepository().connectivity.getConnectionOwnerUid(
+                    ipProtocol,
+                    InetSocketAddress(sourceAddress, sourcePort),
+                    InetSocketAddress(destinationAddress, destinationPort),
+                )
+            } else {
+                Libcore.findConnectionOwnerUid(
+                    ipProtocol,
+                    sourceAddress,
+                    sourcePort,
+                    destinationAddress,
+                    destinationPort,
+                )
+            }
+            if (uid == Process.INVALID_UID) error("android: connection owner not found")
             PackageCache.awaitLoadSync()
             val packages = PackageCache.uidMap[uid]
             return ConnectionOwner(uid, packages?.toStringIterator(packages.size))
@@ -92,7 +102,8 @@ class AndroidPlatformInterface : PlatformInterface {
         for (network in networks) {
             val boxInterface = LibcoreNetworkInterface()
             val linkProperties = resolveAndroidRepository().connectivity.getLinkProperties(network) ?: continue
-            val networkCapabilities = resolveAndroidRepository().connectivity.getNetworkCapabilities(network) ?: continue
+            val networkCapabilities =
+                resolveAndroidRepository().connectivity.getNetworkCapabilities(network) ?: continue
             boxInterface.name = linkProperties.interfaceName
             val networkInterface =
                 networkInterfaces.find { it.name == boxInterface.name } ?: continue
@@ -143,6 +154,32 @@ class AndroidPlatformInterface : PlatformInterface {
     }
 
     override fun localDNSTransport(): LocalDNSTransport = LocalResolver
+
+    override fun tailscaleHostname(): String {
+        return defaultOr(
+            "",
+            {
+                if (SDK_INT >= Build.VERSION_CODES.N_MR1) {
+                    Settings.Global.getString(
+                        resolveAndroidRepository().context.contentResolver,
+                        Settings.Global.DEVICE_NAME,
+                    ).blankAsNull()
+                } else {
+                    null
+                }
+            },
+            {
+                val manu = Build.MANUFACTURER
+                var model = Build.MODEL
+                // Strip manufacturer from model.
+                val index = model.lowercase(Locale.getDefault()).indexOf(manu.lowercase(Locale.getDefault()))
+                if (index != -1) {
+                    model = model.substring(index + manu.length).trim()
+                }
+                "$manu $model"
+            },
+        )
+    }
 
     private class InterfaceArray(
         private val iterator: Iterator<LibcoreNetworkInterface>,

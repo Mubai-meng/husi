@@ -11,10 +11,10 @@ import com.sun.net.httpserver.HttpServer
 import com.fr.husi.APP_NAME
 import com.fr.husi.core.CoreClient
 import com.fr.husi.ktx.isLoopbackHost
+import com.fr.husi.ktx.joinAddress
 import com.fr.husi.ktx.openUri
 import com.fr.husi.ktx.readableMessage
 import com.fr.husi.ktx.unwrapIPV6Host
-import com.fr.husi.ktx.wrapIPV6Host
 import com.fr.husi.proto.daemon.OpenConnectBrowserResult
 import com.fr.husi.proto.daemon.openConnectAuthFormResponse
 import com.fr.husi.proto.daemon.openConnectAuthResponseSubmission
@@ -386,7 +386,7 @@ private fun openConnectPhase(state: String) = when (state) {
 }
 
 private class CallbackTarget(val scheme: String, val host: String, val port: Int) {
-    fun resolve(requestUri: String): String = "$scheme://${host.wrapIPV6Host()}:$port$requestUri"
+    fun resolve(requestUri: String): String = "$scheme://${joinAddress(host, port)}$requestUri"
 }
 
 private fun parseCallbackTarget(prefixes: List<String>, defaultPort: Int): CallbackTarget {

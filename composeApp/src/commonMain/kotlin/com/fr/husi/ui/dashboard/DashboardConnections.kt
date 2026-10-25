@@ -35,10 +35,15 @@ import com.fr.husi.compose.BoxedVerticalScrollbar
 import com.fr.husi.compose.fadingEdge
 import com.fr.husi.compose.rememberSwipeToDismissBoxStateUnsaveable
 import com.fr.husi.compose.theme.LogColors
-import com.fr.husi.libcore.Libcore
+import com.fr.husi.ktx.formatBytes
 import com.fr.husi.resources.Res
+import com.fr.husi.resources.active
+import com.fr.husi.resources.connection_empty_active
+import com.fr.husi.resources.connection_empty_all
+import com.fr.husi.resources.connection_empty_closed
+import com.fr.husi.resources.connection_empty_no_status
+import com.fr.husi.resources.connection_empty_search
 import com.fr.husi.resources.connection_speed
-import com.fr.husi.resources.connection_status_active
 import com.fr.husi.resources.connection_status_closed
 import com.fr.husi.resources.delete_forever
 import com.fr.husi.resources.traffic
@@ -191,8 +196,8 @@ private fun ConnectionCard(
                 Text(
                     text = stringResource(
                         Res.string.traffic,
-                        Libcore.formatBytes(connection.uploadTotal),
-                        Libcore.formatBytes(connection.downloadTotal),
+                        connection.uploadTotal.formatBytes(),
+                        connection.downloadTotal.formatBytes(),
                     ),
                     fontSize = 14.sp,
                 )
@@ -200,8 +205,8 @@ private fun ConnectionCard(
                 Text(
                     text = stringResource(
                         Res.string.connection_speed,
-                        Libcore.formatBytes(connection.uploadSpeed),
-                        Libcore.formatBytes(connection.downloadSpeed),
+                        connection.uploadSpeed.formatBytes(),
+                        connection.downloadSpeed.formatBytes(),
                     ),
                     fontSize = 14.sp,
                 )
@@ -211,7 +216,7 @@ private fun ConnectionCard(
                         if (connection.isClosed) {
                             Res.string.connection_status_closed
                         } else {
-                            Res.string.connection_status_active
+                            Res.string.active
                         },
                     ),
                     fontSize = 14.sp,

@@ -11,9 +11,18 @@ import com.fr.husi.proto.daemon.Log
 import com.fr.husi.proto.daemon.NetworkQualityTestProgress
 import com.fr.husi.proto.daemon.OpenConnectAuthResponseSubmission
 import com.fr.husi.proto.daemon.OpenConnectStatusUpdate
+import com.fr.husi.proto.daemon.DownloadTaildropFileChunk
 import com.fr.husi.proto.daemon.OpenVPNChallengeSubmission
 import com.fr.husi.proto.daemon.OpenVPNStatusUpdate
 import com.fr.husi.proto.daemon.OutboundList
+import com.fr.husi.proto.daemon.TaildropInbox
+import com.fr.husi.proto.daemon.TaildropSendClientMessage
+import com.fr.husi.proto.daemon.TaildropSendServerMessage
+import com.fr.husi.proto.daemon.TailscaleCertificate
+import com.fr.husi.proto.daemon.TailscalePingResponse
+import com.fr.husi.proto.daemon.TailscaleSSHClientMessage
+import com.fr.husi.proto.daemon.TailscaleSSHServerMessage
+import com.fr.husi.proto.daemon.TailscaleStatusUpdate
 import com.fr.husi.proto.daemon.STUNTestProgress
 import com.fr.husi.proto.daemon.ServiceStatus
 import com.fr.husi.proto.daemon.Status
@@ -22,18 +31,33 @@ import com.fr.husi.proto.v1.GetCertMode
 import com.fr.husi.proto.v1.GetClientMetadataResponse
 import com.fr.husi.proto.v1.GetDaemonInfoResponse
 import com.fr.husi.proto.v1.GetVersionResponse
+import com.fr.husi.proto.v1.HTTPFetchRequest
+import com.fr.husi.proto.v1.HTTPFetchResponse
+import com.fr.husi.proto.v1.PingProtocol
 import com.fr.husi.proto.v1.PluginProcessSpec
+import com.fr.husi.proto.v1.AndroidVPNType
+import com.fr.husi.proto.v1.RootCertificateStore
 import com.fr.husi.proto.v1.SchemaKind
 import com.fr.husi.proto.v1.SpeedTestEvent
 import com.fr.husi.proto.v1.SpeedTestRunRequest
 import com.fr.husi.proto.v1.StartServiceRequest
 import com.fr.husi.proto.v1.URLTestOptions
+import com.fr.husi.proto.v1.WebDAVDeleteRequest
+import com.fr.husi.proto.v1.WebDAVDownloadRequest
+import com.fr.husi.proto.v1.WebDAVDownloadResponse
+import com.fr.husi.proto.v1.WebDAVListRequest
+import com.fr.husi.proto.v1.WebDAVListResponse
+import com.fr.husi.proto.v1.WebDAVUploadRequest
+import java.io.File
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.toList
 import kotlin.time.Duration
 
 /**
@@ -94,12 +118,111 @@ open class FakeCoreClient : CoreClient {
         cancelOpenVPNThrowable?.let { throw it }
     }
 
+    val tailscaleStatusFlow =
+        MutableSharedFlow<TailscaleStatusUpdate>(replay = 1, extraBufferCapacity = 16)
+    val taildropInboxFlow = MutableSharedFlow<TaildropInbox>(replay = 1, extraBufferCapacity = 16)
+
+    override fun subscribeTailscaleStatus(): Flow<TailscaleStatusUpdate> = tailscaleStatusFlow
+
+    var lastTailscalePing: Pair<String, String>? = null
+
+    override fun tailscalePing(tag: String, ip: String): Flow<TailscalePingResponse> {
+        lastTailscalePing = tag to ip
+        return emptyFlow()
+    }
+
+    var lastTailscaleExitNode: Pair<String, String>? = null
+
+    override suspend fun setTailscaleExitNode(tag: String, stableId: String) {
+        lastTailscaleExitNode = tag to stableId
+    }
+
+    var lastTailscaleLogout: String? = null
+
+    override suspend fun tailscaleLogout(tag: String) {
+        lastTailscaleLogout = tag
+    }
+
+    var lastTailscaleCertificate: Triple<String, String, Long>? = null
+    var nextTailscaleCertificate: TailscaleCertificate = TailscaleCertificate.getDefaultInstance()
+
+    override suspend fun getTailscaleCertificate(
+        tag: String,
+        domain: String,
+        minValiditySeconds: Long,
+    ): TailscaleCertificate {
+        lastTailscaleCertificate = Triple(tag, domain, minValiditySeconds)
+        return nextTailscaleCertificate
+    }
+
+    var lastTaildropInboxTag: String? = null
+
+    override fun subscribeTaildropInbox(tag: String): Flow<TaildropInbox> {
+        lastTaildropInboxTag = tag
+        return taildropInboxFlow
+    }
+
+    var lastTaildropInboxRead: String? = null
+
+    override suspend fun markTaildropInboxRead(tag: String) {
+        lastTaildropInboxRead = tag
+    }
+
+    var lastDeletedTaildropFile: Pair<String, String>? = null
+
+    override suspend fun deleteTaildropFile(tag: String, name: String) {
+        lastDeletedTaildropFile = tag to name
+    }
+
+    var lastCancelledTaildropReceiving: Triple<String, String, String>? = null
+
+    override suspend fun cancelTaildropReceiving(tag: String, senderId: String, name: String) {
+        lastCancelledTaildropReceiving = Triple(tag, senderId, name)
+    }
+
+    var lastTaildropDownload: Pair<String, String>? = null
+
+    override fun downloadTaildropFile(tag: String, name: String): Flow<DownloadTaildropFileChunk> {
+        lastTaildropDownload = tag to name
+        return emptyFlow()
+    }
+
+    /** Client messages from the latest [sendTaildropFiles], recorded when the returned flow is collected. */
+    var taildropSendRequests: List<TaildropSendClientMessage> = emptyList()
+
+    override fun sendTaildropFiles(
+        requests: Flow<TaildropSendClientMessage>,
+    ): Flow<TaildropSendServerMessage> = flow {
+        taildropSendRequests = requests.toList()
+    }
+
+    /** Client messages the latest [startTailscaleSSHSession] sent, recorded while it runs. */
+    val tailscaleSSHRequests = mutableListOf<TailscaleSSHClientMessage>()
+
+    /** Server messages the next [startTailscaleSSHSession] answers with once it has the start message. */
+    var tailscaleSSHResponses: List<TailscaleSSHServerMessage> = emptyList()
+
+    override fun startTailscaleSSHSession(
+        requests: Flow<TailscaleSSHClientMessage>,
+    ): Flow<TailscaleSSHServerMessage> = channelFlow {
+        tailscaleSSHRequests.clear()
+        launch {
+            requests.collect { tailscaleSSHRequests += it }
+        }
+        for (response in tailscaleSSHResponses) send(response)
+    }
+
     var lastOpenVPNSubmission: OpenVPNChallengeSubmission? = null
     var lastOpenVPNCancel: Pair<String, String>? = null
     var submitOpenVPNThrowable: Throwable? = null
     var cancelOpenVPNThrowable: Throwable? = null
 
-    override suspend fun getVersion(): GetVersionResponse = GetVersionResponse.getDefaultInstance()
+    override suspend fun getVersion(): GetVersionResponse {
+        getVersionCalls += 1
+        getVersionThrowable?.let { throw it }
+        return nextVersion
+    }
+
     override suspend fun getDaemonVersion(): Version = nextDaemonVersion
     override suspend fun getStartedAt(): Long = nextStartedAt
     override suspend fun daemonUrlTest(outboundTag: String) {
@@ -107,6 +230,9 @@ open class FakeCoreClient : CoreClient {
         daemonUrlTestCalls += 1
     }
 
+    var nextVersion: GetVersionResponse = GetVersionResponse.getDefaultInstance()
+    var getVersionCalls: Int = 0
+    var getVersionThrowable: Throwable? = null
     var nextDaemonVersion: Version = Version.getDefaultInstance()
     var nextStartedAt: Long = 0L
     var lastDaemonUrlTestTag: String? = null
@@ -131,6 +257,7 @@ open class FakeCoreClient : CoreClient {
     ): Int = 0
 
     override suspend fun checkConfig(config: String) = Unit
+    override suspend fun formatConfig(config: String): String = config
     override suspend fun generateSchema(kind: SchemaKind): String = "{}"
     override suspend fun getCert(
         server: String,
@@ -238,6 +365,51 @@ open class FakeCoreClient : CoreClient {
             throw throwable
         }
     }
+
+    var lastHttpFetch: HTTPFetchRequest? = null
+        private set
+    var httpFetchResponses: List<HTTPFetchResponse> = emptyList()
+    var httpFetchThrowable: Throwable? = null
+
+    override fun httpFetch(request: HTTPFetchRequest): Flow<HTTPFetchResponse> {
+        lastHttpFetch = request
+        return replay(httpFetchResponses, httpFetchThrowable)
+    }
+
+    override suspend fun webdavList(request: WebDAVListRequest): WebDAVListResponse =
+        WebDAVListResponse.getDefaultInstance()
+
+    /** Every message of the last [webdavUpload], in order. */
+    var lastWebDAVUpload: List<WebDAVUploadRequest> = emptyList()
+        private set
+
+    override suspend fun webdavUpload(requests: Flow<WebDAVUploadRequest>) {
+        lastWebDAVUpload = requests.toList()
+    }
+
+    var lastWebDAVDownload: WebDAVDownloadRequest? = null
+        private set
+    var webdavDownloadResponses: List<WebDAVDownloadResponse> = emptyList()
+
+    override fun webdavDownload(request: WebDAVDownloadRequest): Flow<WebDAVDownloadResponse> {
+        lastWebDAVDownload = request
+        return replay(webdavDownloadResponses, throwable = null)
+    }
+
+    var lastWebDAVDelete: WebDAVDeleteRequest? = null
+        private set
+
+    override suspend fun webdavDelete(request: WebDAVDeleteRequest) {
+        lastWebDAVDelete = request
+    }
+
+    override suspend fun ping(protocol: PingProtocol, address: String, port: Int, timeoutMs: Int): Int = 0
+
+    override suspend fun matchRuleSets(dir: File, keyword: String): List<String> = emptyList()
+
+    override suspend fun getRootCertificates(store: RootCertificateStore): String = ""
+
+    override suspend fun readAndroidVPNType(apkPaths: List<String>): AndroidVPNType? = null
 
     override suspend fun resetNetwork() = Unit
     override suspend fun runTask(taskId: String) = Unit

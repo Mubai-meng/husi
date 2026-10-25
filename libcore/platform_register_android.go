@@ -9,7 +9,7 @@ import (
 	E "github.com/sagernet/sing/common/exceptions"
 	"github.com/sagernet/sing/service"
 
-	"github.com/xchacha20-poly1305/husi/libcore/v2/plugin/protect"
+	"github.com/xchacha20-poly1305/protect-go"
 )
 
 func registerPlatformInterface(ctx context.Context, platformInterface PlatformInterface, forTest bool) {
@@ -17,9 +17,8 @@ func registerPlatformInterface(ctx context.Context, platformInterface PlatformIn
 		return
 	}
 	interfaceWrapper := &boxPlatformInterfaceWrapper{
-		useProcFS: platformInterface.UseProcFS(),
-		iif:       platformInterface,
-		forTest:   forTest,
+		iif:     platformInterface,
+		forTest: forTest,
 	}
 	service.MustRegister[adapter.PlatformInterface](ctx, interfaceWrapper)
 	service.MustRegister[protect.Protector](ctx, protect.ProtectorFunc(func(fileDescriptor int) error {

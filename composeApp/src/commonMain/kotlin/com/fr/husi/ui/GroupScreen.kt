@@ -68,14 +68,14 @@ import com.fr.husi.database.SagerDatabase
 import com.fr.husi.fmt.toUniversalLink
 import com.fr.husi.ktx.blankAsNull
 import com.fr.husi.ktx.DisplayTime
-import com.fr.husi.libcore.Libcore
+import com.fr.husi.ktx.formatBytes
 import com.fr.husi.repository.resolveRepository
 import com.fr.husi.resources.Res
 import com.fr.husi.resources.action_export
 import com.fr.husi.resources.action_export_clipboard
+import com.fr.husi.resources.action_export_file
 import com.fr.husi.resources.arrow_back
 import com.fr.husi.resources.back
-import com.fr.husi.resources.action_export_file
 import com.fr.husi.resources.cancel
 import com.fr.husi.resources.clear_profiles
 import com.fr.husi.resources.clear_profiles_message
@@ -91,7 +91,6 @@ import com.fr.husi.resources.group_status_empty
 import com.fr.husi.resources.group_status_empty_subscription
 import com.fr.husi.resources.group_status_proxies
 import com.fr.husi.resources.group_status_updated_empty
-import com.fr.husi.resources.group_update
 import com.fr.husi.resources.internal_link
 import com.fr.husi.resources.link
 import com.fr.husi.resources.menu
@@ -667,13 +666,13 @@ private fun DraggableSwipeableItemScope<GroupItemUiState>.GroupCard(
                                     text = if (subscription.bytesRemaining > 0L) {
                                         stringResource(
                                             Res.string.subscription_traffic,
-                                            Libcore.formatBytes(subscription.bytesUsed),
-                                            Libcore.formatBytes(subscription.bytesRemaining),
+                                            subscription.bytesUsed.formatBytes(),
+                                            subscription.bytesRemaining.formatBytes(),
                                         )
                                     } else {
                                         stringResource(
                                             Res.string.subscription_used,
-                                            Libcore.formatBytes(subscription.bytesUsed),
+                                            subscription.bytesUsed.formatBytes(),
                                         )
                                     },
                                     style = MaterialTheme.typography.bodySmall,
@@ -753,7 +752,7 @@ private fun DraggableSwipeableItemScope<GroupItemUiState>.GroupCard(
                                 enabled = !state.isUpdating,
                             ) {
                                 Text(
-                                    text = stringResource(Res.string.group_update),
+                                    text = stringResource(Res.string.update),
                                     color = MaterialTheme.colorScheme.primary,
                                 )
                             }

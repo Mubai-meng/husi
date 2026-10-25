@@ -1,6 +1,6 @@
 package com.fr.husi.ui.openvpn
 
-import com.fr.husi.core.CoreClient
+import com.fr.husi.core.remote.CoreTarget
 import com.fr.husi.proto.daemon.openVPNChallengeSubmission
 import com.fr.husi.vpn.OPENVPN_STATE_AUTH_PENDING
 import com.fr.husi.vpn.OpenVPNChallengeState
@@ -12,17 +12,17 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.map
-import org.koin.core.context.GlobalContext
 
 typealias PendingOpenVPNAuth = PendingVpnAuth<OpenVPNChallengeState>
 
 class OpenVPNAuthController(
-    private val coreClient: CoreClient = GlobalContext.get().get(),
+    targets: StateFlow<CoreTarget?>,
     ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) {
     private val session = VpnAuthSession(
-        subscribe = {
-            coreClient.subscribeOpenVPNStatus().map { update ->
+        targets = targets,
+        subscribe = { client ->
+            client.subscribeOpenVPNStatus().map { update ->
                 update.endpointsList.map { it.toState() }
             }
         },
@@ -39,6 +39,9 @@ class OpenVPNAuthController(
     val endpoints: StateFlow<List<OpenVPNEndpointState>>
         get() = session.endpoints
 
+    val pendingChallengeKeys: StateFlow<Set<String>>
+        get() = session.pendingChallengeKeys
+
     val pendingDialogAuth: StateFlow<PendingOpenVPNAuth?>
         get() = session.pendingDialogAuth
 
@@ -53,8 +56,8 @@ class OpenVPNAuthController(
         username: String,
         password: String,
         secret: String,
-    ): String? = session.perform("submit openvpn auth challenge") {
-        coreClient.submitOpenVPNChallengeResponse(
+    ): String? = session.perform("submit openvpn auth challenge") { target ->
+        target.client.submitOpenVPNChallengeResponse(
             openVPNChallengeSubmission {
                 this.endpointTag = endpointTag
                 challengeID = challenge.id
@@ -67,7 +70,7 @@ class OpenVPNAuthController(
 
     /** @return an error message, or null on success. */
     suspend fun cancelAuthChallenge(endpointTag: String, challengeId: String): String? =
-        session.perform("cancel openvpn auth challenge") {
-            coreClient.cancelOpenVPNChallenge(endpointTag, challengeId)
+        session.perform("cancel openvpn auth challenge") { target ->
+            target.client.cancelOpenVPNChallenge(endpointTag, challengeId)
         }
 }

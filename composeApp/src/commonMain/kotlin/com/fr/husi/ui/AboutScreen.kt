@@ -24,6 +24,8 @@ import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
@@ -50,8 +52,9 @@ import com.fr.husi.compose.material3.Icon
 import com.fr.husi.compose.material3.Text
 import com.fr.husi.compose.setPlainText
 import com.fr.husi.compose.withNavigation
+import com.fr.husi.core.CoreVersionCache
 import com.fr.husi.database.DataStore
-import com.fr.husi.libcore.Libcore
+import com.fr.husi.proto.v1.GetVersionResponse
 import com.fr.husi.resources.Res
 import com.fr.husi.resources.android
 import com.fr.husi.resources.app_name
@@ -76,18 +79,21 @@ import com.fr.husi.resources.project
 import com.fr.husi.resources.shuowenxiaozhuan_husi
 import com.fr.husi.resources.translate_platform
 import com.fr.husi.resources.version_x
+import com.fr.husi.utils.AppVersion
 import io.github.oikvpqya.compose.fastscroller.material3.defaultMaterialScrollbarStyle
 import io.github.oikvpqya.compose.fastscroller.rememberScrollbarAdapter
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.Font
 import org.jetbrains.compose.resources.stringResource
 import org.jetbrains.compose.resources.vectorResource
+import org.koin.compose.koinInject
 
 @Composable
 fun AboutScreen(
     modifier: Modifier = Modifier,
     onBackPress: () -> Unit,
     onNavigateToLibraries: () -> Unit,
+    coreVersionCache: CoreVersionCache = koinInject(),
 ) {
     val clipboard = LocalClipboard.current
     val windowInsets = WindowInsets.safeDrawing
@@ -100,15 +106,18 @@ fun AboutScreen(
         "${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})"
     }
     val releaseLink = remember(BuildConfig.VERSION_NAME) {
-        val isPreVersion = Libcore.isPreRelease(BuildConfig.VERSION_NAME)
+        val isPreVersion = AppVersion.parse(BuildConfig.VERSION_NAME)?.isPreRelease == true
         if (isPreVersion) {
             githubReleasesPageUrl(HUSI_REPOSITORY)
         } else {
             githubLatestReleasePageUrl(HUSI_REPOSITORY)
         }
     }
-    val boxVersion = remember { Libcore.versionBox() }
-    val buildEnvironment = remember { Libcore.buildEnvironment() }
+    val coreVersion by produceState<GetVersionResponse?>(null, coreVersionCache) {
+        value = coreVersionCache.get()
+    }
+    val boxVersion = coreVersion?.singBoxVersion.orEmpty()
+    val buildEnvironment = coreVersion?.buildEnvironment.orEmpty()
 
     val shouldRequestBattery = rememberShouldRequestBatteryOptimizations()
     val requestIgnoreBatteryOptimizations = rememberRequestIgnoreBatteryOptimizations()

@@ -3,37 +3,40 @@ package com.fr.husi.fmt.trusttunnel
 import com.fr.husi.fmt.SingBoxOptions
 import com.fr.husi.ktx.blankAsNull
 import com.fr.husi.ktx.emptyAsNull
+import com.fr.husi.ktx.joinAddress
+import com.fr.husi.ktx.splitAddress
+import com.fr.husi.ktx.toPortOrNull
 import com.fr.husi.ktx.listByLineOrComma
-import com.fr.husi.libcore.Libcore
-import com.fr.husi.libcore.TrustTunnelURL
+import okio.ByteString
 
 fun parseTrustTunnel(link: String): TrustTunnelBean {
-    val url = Libcore.parseTrustTunnelLink(link)
+    val url = TrustTunnelLink.parse(link)
+    val (host, port) = checkNotNull(splitAddress(url.addresses.first()))
     return TrustTunnelBean().apply {
-        serverAddress = url.host
-        serverPort = url.port
-        serverName = url.serverName
+        serverAddress = host
+        serverPort = checkNotNull(port.toPortOrNull())
+        serverName = url.customSni
         username = url.username
         password = url.password
         allowInsecure = url.skipVerification
-        certificates = url.certificate
-        quic = url.quic
+        certificates = if (url.certificate.size > 0) certificateChainToPem(url.certificate) else ""
+        quic = url.http3
         name = url.name
     }
 }
 
 fun TrustTunnelBean.toUri(): String {
-    return TrustTunnelURL().apply {
-        host = serverAddress
-        port = serverPort
-        this.serverName = serverName
-        this.username = username
-        this.password = password
-        skipVerification = allowInsecure
-        certificate = certificates
-        this.quic = quic
-        this.name = name
-    }.build()
+    return TrustTunnelLink(
+        hostname = serverName.ifEmpty { serverAddress },
+        addresses = listOf(joinAddress(serverAddress, serverPort)),
+        customSni = serverName,
+        username = username,
+        password = password,
+        skipVerification = allowInsecure,
+        certificate = certificates.blankAsNull()?.let(::pemToCertificateChain) ?: ByteString.EMPTY,
+        http3 = quic,
+        name = name,
+    ).build()
 }
 
 fun buildSingBoxOutboundTrustTunnelBean(bean: TrustTunnelBean): SingBoxOptions.Outbound_TrustTunnelOptions {

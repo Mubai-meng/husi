@@ -4,13 +4,15 @@ import com.fr.husi.BuildConfig
 import com.fr.husi.HUSI_REPOSITORY
 import com.fr.husi.database.DataStore
 import com.fr.husi.ktx.Logs
-import com.fr.husi.ktx.USER_AGENT
 import com.fr.husi.ktx.blankAsNull
 import com.fr.husi.ktx.kxs
-import com.fr.husi.libcore.HttpClientFactory
-import com.fr.husi.libcore.Libcore
-import com.fr.husi.libcore.resolveHttpClientFactory
+import com.fr.husi.net.HttpFetchRequest
+import com.fr.husi.net.HttpFetcher
+import com.fr.husi.net.buildUserAgent
+import com.fr.husi.net.localSocks5Proxy
+import com.fr.husi.net.resolveHttpFetcher
 import com.fr.husi.platform.PlatformAbis
+import com.fr.husi.utils.AppVersion
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -110,7 +112,7 @@ internal fun selectApkAsset(
 }
 
 class AppUpdateChecker(
-    private val httpClientFactory: HttpClientFactory = resolveHttpClientFactory(),
+    private val httpFetcher: HttpFetcher = resolveHttpFetcher(),
     private val currentVersion: String = BuildConfig.VERSION_NAME,
     private val abis: List<String> = PlatformAbis.supported,
     private val repository: String = HUSI_REPOSITORY,
@@ -119,7 +121,9 @@ class AppUpdateChecker(
     suspend fun check(): AppUpdateInfo? {
         val acceptPreRelease = DataStore.appUpdatePreRelease.get()
         val release = fetchRelease(acceptPreRelease) ?: return null
-        if (!Libcore.compareSemver(release.tagName, currentVersion)) return null
+        val latestVersion = AppVersion.parse(release.tagName) ?: return null
+        val installedVersion = AppVersion.parse(currentVersion) ?: return null
+        if (latestVersion <= installedVersion) return null
 
         val asset = selectApkAsset(release.assets, abis)
         return AppUpdateInfo(
@@ -151,21 +155,14 @@ class AppUpdateChecker(
 
     private suspend fun fetchString(url: String): String {
         val token = DataStore.appUpdateToken.get()
-        return httpClientFactory.newHttpClient().apply {
-            keepAlive()
-            if (DataStore.serviceState.connected) {
-                useSocks5(
-                    DataStore.mixedPort.get(),
-                    DataStore.inboundUsername.get(),
-                    DataStore.inboundPassword.get(),
-                )
-            }
-        }.newRequest().apply {
-            setURL(url)
-            setUserAgent(USER_AGENT)
-            token.blankAsNull()?.let {
-                setHeader("Authorization", "Bearer $it")
-            }
-        }.execute().contentString
+        val request = HttpFetchRequest(
+            url = url,
+            userAgent = buildUserAgent(),
+            headers = token.blankAsNull()
+                ?.let { mapOf("Authorization" to "Bearer $it") }
+                .orEmpty(),
+            socks5 = localSocks5Proxy(),
+        )
+        return httpFetcher.fetchText(request).content
     }
 }
