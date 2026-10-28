@@ -1,12 +1,13 @@
 // Package speedtest 实现独立于延迟测试的带宽(吞吐)测速。
 //
-// 服务器发现使用 github.com/showwin/speedtest-go(其计量层经离线仲裁
-// 测试证实不可靠, 已弃用, 见 measure.go 注释); 吞吐测量完全自研:
-// 字节自己数、时间自己记, 速率 = 字节增量 ÷ 时长, 单位恒为 Bytes/s。
+// 服务器发现与吞吐测量全部自研(2026-10-26 起不再依赖 speedtest-go,
+// 原因见 servers.go 头部注释): 字节自己数、时间自己记, 速率 =
+// 字节增量 ÷ 时长, 单位恒为 Bytes/s。
 //
 // 所有测量流量强制经过调用方提供的本地代理(即 sing-box mixed 入站,
-// 仅监听 127.0.0.1), 本包自身绝不创建任何对外直连 socket;
-// speedtest-go 内部的 ICMP/TCP ping 路径(会绕过代理直连)从不被调用。
+// 仅监听 127.0.0.1), 本包自身绝不创建任何对外直连 socket, 也不做任何
+// 形式的主机探测(旧实现里 speedtest-go 的 ICMP/TCP ping 路径是
+// 潜在的直连泄漏点, 已随依赖一并移除)。
 //
 // 带宽测速与 husi 既有延迟测试(urltest/ping)是两套完全独立的任务:
 // 不共享实例、不共享状态、不共享调度。
@@ -20,19 +21,31 @@ package speedtest
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
-	"net/http"
 	"net/url"
-	"sync"
+	"strconv"
 	"time"
-
-	speedtestgo "github.com/showwin/speedtest-go/speedtest"
 )
 
 const SpeedtestInboundTag = "__husi_speedtest_in"
+
+// 失败类型(Result.FailureKind)。稳定的枚举值, 供 Kotlin 侧决定
+// 自动剔除策略与提示文案 —— 不再靠匹配错误字符串(审查 P1-3/P1-6)。
+const (
+	FailureNone       = ""             // 未失败
+	FailureDiscovery  = "discovery"    // 拉服务器列表失败
+	FailureConfig     = "config"       // 代理地址/配置问题
+	FailureConnect    = "connect"      // 连接被拒/不可达/DNS/TLS —— 确定性故障
+	FailureTimeout    = "timeout"      // 阶段计时到期仍无数据
+	FailureHTTPStatus = "http_status"  // 服务器返回非 2xx
+	FailureZeroBytes  = "zero_bytes"   // 有连接但一个字节都没收到(原因未知)
+	FailureCancelled  = "cancelled"    // 被主动取消(用户停止/切节点)
+)
 
 // Options 一次带宽测速的参数。
 type Options struct {
@@ -50,6 +63,12 @@ type Options struct {
 	MeasureUpload bool
 	// ServerKeyword speedtest.net 服务器模糊筛选, 空=按地理位置距离。
 	ServerKeyword string
+	// ServerCacheKey 服务器列表缓存的隔离键, 由调用方传被测节点的唯一
+	// 标识(husi 侧传根出站 tag)。审查 P2-4: api/js/servers 返回的列表是
+	// 按**请求方出口 IP** 的地理距离排好序的, 而发现请求本身就走被测
+	// 节点 —— 同一份列表只对同一个出口位置有意义, 只用 keyword 做键会让
+	// 换国家/地区的节点复用上一个节点那份排序(选到远端服务器)。
+	ServerCacheKey string
 	// LogFunc 诊断日志回调(nil 静默)。libcore 侧传 log.Info, 测试传 t.Logf。
 	LogFunc func(string)
 }
@@ -69,6 +88,15 @@ type Result struct {
 	ServerID    string `json:"server_id,omitempty"`
 	ServerName  string `json:"server_name,omitempty"`
 	Error       string `json:"error,omitempty"`
+	// FailureKind 失败类型(见 Failure* 常量); 空 = 未失败。
+	FailureKind string `json:"failure_kind,omitempty"`
+	// RequestErrors 请求失败累计次数(诊断: 明显偏大说明链路不稳)。
+	RequestErrors int64 `json:"request_errors,omitempty"`
+	// WorkerDropouts 因连续失败提前退出的并发连接数(审查 P2-8)。
+	WorkerDropouts int `json:"worker_dropouts,omitempty"`
+	// ActiveConnections 阶段结束时的有效连接数 = 配置并发 - WorkerDropouts;
+	// 小于配置值时上层应提示"连接不足, 结果可能偏低"。
+	ActiveConnections int `json:"active_connections,omitempty"`
 
 	// ---- 诊断字段(用户报告"结果不准确"后加入, 便于核对速率 = 总字节/耗时) ----
 	TotalDownloadBytes int64 `json:"total_download_bytes,omitempty"`
@@ -84,53 +112,12 @@ type EventFunc func(Event)
 // defaultPhaseSeconds 未显式配置时单阶段默认时长。
 const defaultPhaseSeconds = 10
 
-// ---- 服务器列表跨会话缓存 ----
-//
-// 服务器列表要经被测节点的代理从 speedtest.net 拉取, 慢节点上 TLS+HTTP
-// 往返要 1~2s; 批量测速(每节点硬超时 5s)时这段固定开销吃掉一半预算,
-// 慢节点甚至在进入下载阶段前就超时 —— 2026-10-04 日志实测整批节点
-// download total=0 bytes, 全部报"测速超时"。
-//
-// 服务器列表只是全局候选集, 与具体走哪个节点无关(下载请求仍然 100%
-// 经被测节点的回环入站), 因此按 keyword 缓存跨会话复用; 命中时完全
-// 跳过发现阶段, 把每节点预算全部留给下载计量。拉取失败时回退任意龄期
-// 的旧缓存(慢节点上拉取失败很常见, 好过整批失败)。
-const serverListCacheTTL = 30 * time.Minute
-
-type serverCacheEntry struct {
-	servers speedtestgo.Servers
-	fetched time.Time
-}
-
-var (
-	serverCacheMu   sync.Mutex
-	serverListCache = map[string]serverCacheEntry{}
-)
-
-func cachedServerList(keyword string, maxAge time.Duration) (speedtestgo.Servers, bool) {
-	serverCacheMu.Lock()
-	defer serverCacheMu.Unlock()
-	e, ok := serverListCache[keyword]
-	if !ok || time.Since(e.fetched) > maxAge {
-		return nil, false
-	}
-	return e.servers, true
-}
-
-func storeServerList(keyword string, servers speedtestgo.Servers) {
-	if len(servers) == 0 {
-		return
-	}
-	serverCacheMu.Lock()
-	defer serverCacheMu.Unlock()
-	serverListCache[keyword] = serverCacheEntry{servers: servers, fetched: time.Now()}
-}
-
 // Run 执行一次完整带宽测速。ctx 取消会中止测量并返回当前已测得的
 // 部分速率(不算错误)。onEvent 可为 nil。
 func Run(ctx context.Context, opts Options, onEvent EventFunc) (Result, error) {
 	var result Result
 	if opts.ProxyURL == "" {
+		result.FailureKind = FailureConfig
 		return result, errors.New("speedtest: empty proxy url")
 	}
 	if opts.DownloadSeconds <= 0 {
@@ -148,129 +135,139 @@ func Run(ctx context.Context, opts Options, onEvent EventFunc) (Result, error) {
 		}
 	}
 	connections := max(opts.MaxConnections, 1)
+	measureCfg := measureConfig{proxyURL: opts.ProxyURL, connections: connections}
 
-	// ---- 服务器发现(仅此一处使用 speedtest-go, 带跨会话缓存) ----
+	// ---- 服务器发现 / 探测共用的轻量 client ----
 	//
-	// WithDoer(&http.Client{}): 防止库把自身 Transport 挂到
-	// http.DefaultClient 上造成全局污染; 发现请求始终经由
-	// UserConfig.Proxy 指定的代理发起, 不会直连。
-	var servers speedtestgo.Servers
-	if cached, ok := cachedServerList(opts.ServerKeyword, serverListCacheTTL); ok {
-		servers = cached
-		diag(fmt.Sprintf("speedtest: server list cache hit (%d servers), skip discovery",
-			len(servers)))
-	} else {
-		client := speedtestgo.New(
-			speedtestgo.WithDoer(&http.Client{}),
-			speedtestgo.WithUserConfig(&speedtestgo.UserConfig{
-				Proxy:          opts.ProxyURL,
-				MaxConnections: connections,
-				Keyword:        opts.ServerKeyword,
-			}),
-		)
+	// 与下载计量的 client 分开: 这里只需要少量并发, 且要在计量开始前
+	// 就可用。代理 URL 解析失败属于配置问题, 直接失败(绝不静默直连)。
+	diagClient, err := newMeasureClient(measureConfig{proxyURL: opts.ProxyURL, connections: 2}, nil)
+	if err != nil {
+		result.FailureKind = FailureConfig
+		return result, fmt.Errorf("speedtest: %w", err)
+	}
+	defer diagClient.CloseIdleConnections()
 
-		// 用户地理位置用于按距离挑选服务器; 走节点访问, 失败不致命。
-		if _, err := client.FetchUserInfoContext(ctx); err != nil {
-			onEvent(Event{Phase: "server", Message: "fetch user info: " + err.Error()})
-		}
-
-		fetched, err := client.FetchServerListContext(ctx)
-		if err != nil {
-			// 慢节点上拉取失败很常见: 回退任意龄期的旧缓存, 好过整批失败。
-			if stale, ok := cachedServerList(opts.ServerKeyword, 24*time.Hour); ok {
-				servers = stale
-				diag("speedtest: fetch server list failed, fallback to stale cache: " + err.Error())
-			} else {
-				return result, fmt.Errorf("fetch server list: %w", err)
-			}
-		} else {
-			storeServerList(opts.ServerKeyword, fetched)
-			servers = fetched
-		}
+	// 缓存键 = keyword + 节点隔离键(见 Options.ServerCacheKey)。
+	serverCacheKey := opts.ServerKeyword + "|" + opts.ServerCacheKey
+	servers, err := resolveServers(ctx, diagClient, opts.ServerKeyword, serverCacheKey, diag)
+	if err != nil {
+		result.FailureKind = FailureDiscovery
+		return result, err
 	}
 	if len(servers) == 0 {
+		result.FailureKind = FailureDiscovery
 		return result, errors.New("speedtest: no server available")
 	}
-	server := servers[0]
+
+	server := pickServer(ctx, diagClient, servers, diag)
 	result.ServerID = server.ID
-	result.ServerName = server.Sponsor + " (" + server.Name + ")"
+	result.ServerName = server.displayName()
 	onEvent(Event{Phase: "server", Message: result.ServerName})
 
-	// ---- 自研测量内核 ----
-	//
-	// 测量 client 与发现 client 完全独立: http.Transport 原生支持
-	// socks5:// 代理 URL(内部 SOCKS5 CONNECT), 出口仍是同一个回环
-	// mixed 入站; DisableCompression 关闭透明 gzip(防止计数被压缩
-	// 层干扰), ForceAttemptHTTP2 关闭多路复用(保证 N 条真实并发
-	// TCP 连接, 与 Karing PC 行为一致)。
-	proxyURL, err := url.Parse(opts.ProxyURL)
-	if err != nil {
-		return result, fmt.Errorf("parse proxy url: %w", err)
-	}
-	measureClient := &http.Client{
-		Transport: &http.Transport{
-			Proxy:                 http.ProxyURL(proxyURL),
-			DisableCompression:    true,
-			ForceAttemptHTTP2:     false,
-			MaxIdleConns:          connections,
-			MaxIdleConnsPerHost:   connections,
-			IdleConnTimeout:       time.Minute,
-			TLSHandshakeTimeout:   10 * time.Second,
-			ResponseHeaderTimeout: 30 * time.Second,
-		},
-	}
-
-	// 下载阶段: N 连接持续 GET 最大档位测试文件, 到时/取消即停,
-	// 已收字节照常计数。
+	// ---- 下载阶段: N 连接持续 GET 最大档位测试文件, 到时/取消即停 ----
 	dlURL := downloadURLFor(server.URL)
 	if dlURL == "" {
+		result.FailureKind = FailureConfig
 		return result, fmt.Errorf("speedtest: bad server url %q", server.URL)
 	}
-	diag(fmt.Sprintf("speedtest: download phase start, server=%q url=%s conns=%d duration=%ds",
-		result.ServerName, dlURL, connections, opts.DownloadSeconds))
-	dlCtx, dlCancel := context.WithTimeout(ctx, time.Duration(opts.DownloadSeconds)*time.Second)
-	dlMeter := measureDownload(dlCtx, measureClient, dlURL, connections, func(rate int64) {
+	dlDuration := time.Duration(opts.DownloadSeconds) * time.Second
+	dlWarmup := warmupFor(dlDuration)
+	diag(fmt.Sprintf(
+		"speedtest: download phase start, server=%q url=%s conns=%d duration=%ds warmup=%s",
+		result.ServerName, dlURL, connections, opts.DownloadSeconds, dlWarmup,
+	))
+
+	dlCtx, dlCancel := context.WithTimeout(ctx, dlDuration)
+	dlMeter, err := measureDownload(dlCtx, measureCfg, dlURL, func(rate int64) {
 		onEvent(Event{Phase: "download", RateBps: rate})
 	})
+	dlPhaseErr := dlCtx.Err() // 必须在 cancel 之前取, 否则永远是 Canceled
 	dlCancel()
-	dlBps, dlTotal, dlElapsed := dlMeter.phaseRate(measureWarmup)
+	if err != nil {
+		result.FailureKind = FailureConfig
+		return result, fmt.Errorf("speedtest: download phase: %w", err)
+	}
+
+	dlBps, dlTotal, dlElapsed := dlMeter.phaseRate(dlWarmup)
 	result.DownloadBps = dlBps
 	result.TotalDownloadBytes = dlTotal
 	result.DownloadElapsedMs = dlElapsed.Milliseconds()
+	result.RequestErrors = dlMeter.RequestErrors()
+	result.WorkerDropouts = dlMeter.WorkerDropouts()
+	result.ActiveConnections = max(connections-dlMeter.WorkerDropouts(), 0)
 	// 诊断日志(进 husi 日志页): 速率直接可由 总字节/耗时 核算, 一目了然。
 	diag(fmt.Sprintf(
-		"speedtest diag: download total=%d bytes elapsed=%.2fs rate=%d B/s (%.2f Mbps)",
-		dlTotal, dlElapsed.Seconds(), dlBps, float64(dlBps)*8/1e6,
+		"speedtest diag: download total=%d bytes elapsed=%.2fs warmup=%s rate=%d B/s (%.2f Mbps)"+
+			" conns=%d(active=%d dropped=%d) errors=%d%s",
+		dlTotal, dlElapsed.Seconds(), dlWarmup, dlBps, float64(dlBps)*8/1e6,
+		connections, result.ActiveConnections, dlMeter.WorkerDropouts(), dlMeter.RequestErrors(),
+		lowConfidenceNote(dlElapsed, dlWarmup),
 	))
-	if result.DownloadBps <= 0 {
-		result.Error = "download measured 0 bytes"
+	if dlBps <= 0 {
+		// ⚠️ 不能再无条件覆盖成 "download measured 0 bytes"(审查 P1-3):
+		// 代理没监听 / 实例没起来 / 403 / DNS 失败 / 连接被拒 全被折叠成
+		// 同一句话, runErr 分支永远走不到, 线上完全无法诊断。
+		kind, detail := classifyPhaseFailure(dlPhaseErr, dlMeter, dlTotal)
+		result.FailureKind = kind
+		result.Error = "download failed (" + kind + "): " + detail
 		return result, nil // 部分失败也算完成, 结果如实上报
 	}
 
 	if opts.MeasureUpload {
-		upURL := resolveUploadURL(ctx, measureClient, server.URL)
-		diag(fmt.Sprintf("speedtest: upload phase start, url=%s conns=%d duration=%ds",
-			upURL, connections, opts.UploadSeconds))
-		upCtx, upCancel := context.WithTimeout(ctx, time.Duration(opts.UploadSeconds)*time.Second)
-		upMeter := measureUpload(upCtx, measureClient, upURL, connections, func(rate int64) {
+		upURL := resolveUploadURL(ctx, diagClient, server.URL)
+		upDuration := time.Duration(opts.UploadSeconds) * time.Second
+		upWarmup := warmupFor(upDuration)
+		diag(fmt.Sprintf("speedtest: upload phase start, url=%s conns=%d duration=%ds warmup=%s",
+			upURL, connections, opts.UploadSeconds, upWarmup))
+
+		upCtx, upCancel := context.WithTimeout(ctx, upDuration)
+		upMeter, upErr := measureUpload(upCtx, measureCfg, upURL, func(rate int64) {
 			onEvent(Event{Phase: "upload", RateBps: rate})
 		})
+		upPhaseErr := upCtx.Err()
 		upCancel()
-		upBps, upTotal, upElapsed := upMeter.phaseRate(measureWarmup)
-		result.UploadBps = upBps
-		result.TotalUploadBytes = upTotal
-		result.UploadElapsedMs = upElapsed.Milliseconds()
-		diag(fmt.Sprintf(
-			"speedtest diag: upload total=%d bytes elapsed=%.2fs rate=%d B/s (%.2f Mbps)",
-			upTotal, upElapsed.Seconds(), upBps, float64(upBps)*8/1e6,
-		))
+		if upErr != nil {
+			// 上传阶段起不来不影响已测得的下载结果。
+			diag("speedtest: upload phase setup failed: " + upErr.Error())
+		} else {
+			upBps, upTotal, upElapsed := upMeter.phaseRate(upWarmup)
+			result.UploadBps = upBps
+			result.TotalUploadBytes = upTotal
+			result.UploadElapsedMs = upElapsed.Milliseconds()
+			result.RequestErrors += upMeter.RequestErrors()
+			diag(fmt.Sprintf(
+				"speedtest diag: upload total=%d bytes elapsed=%.2fs warmup=%s rate=%d B/s (%.2f Mbps)"+
+					" conns=%d(active=%d dropped=%d) errors=%d%s",
+				upTotal, upElapsed.Seconds(), upWarmup, upBps, float64(upBps)*8/1e6,
+				connections, max(connections-upMeter.WorkerDropouts(), 0),
+				upMeter.WorkerDropouts(), upMeter.RequestErrors(),
+				lowConfidenceNote(upElapsed, upWarmup),
+			))
+			if upBps <= 0 {
+				// 下载已成: 不把整个节点判死, 只记日志说明上传为何为空。
+				kind, detail := classifyPhaseFailure(upPhaseErr, upMeter, upTotal)
+				diag("speedtest: upload measured 0 bytes (" + kind + "): " + detail)
+			}
+		}
 	}
 	return result, nil
 }
 
+// lowConfidenceNote 稳态窗口过短时给出诊断标记(审查 P2-2: 短窗口的单点
+// 速率对抖动极敏感, 不能当成可信结果)。
+func lowConfidenceNote(elapsed, warmup time.Duration) string {
+	if elapsed-warmup < 500*time.Millisecond {
+		return " low_confidence=true(steady window < 500ms)"
+	}
+	return ""
+}
+
 // InjectSpeedtestLoopback 把任意 husi 节点配置改造成"测速专用"配置:
 //  1. 丢弃原有全部 inbounds(避免端口冲突/意外启动 TUN), 注入一个仅监听
-//     127.0.0.1:listenPort 的 mixed 入站;
+//     127.0.0.1:listenPort 的 mixed 入站, 并**强制随机用户名/密码认证**
+//     (审查 P2-7: 无认证时, 测速窗口内本机任意 App 都能把这个回环入站
+//     当代理用 —— 包括白嫖被测节点的流量);
 //  2. 丢弃原 route 规则并设置 route.final=outboundTag —— 防止测速流量
 //     被用户分流规则(如 speedtest.net 直连规则)劫持, 保证 100% 走被测节点;
 //  3. protectAvailable=true 时注入 route.auto_detect_interface=true
@@ -285,29 +282,47 @@ func Run(ctx context.Context, opts Options, onEvent EventFunc) (Result, error) {
 //
 // 操作原始 JSON(而非 option 结构体)以尽量降低 sing-box 版本演进带来的
 // 字段漂移风险。
-func InjectSpeedtestLoopback(configJSON, outboundTag string, listenPort int, protectAvailable bool) (string, error) {
+func InjectSpeedtestLoopback(configJSON, outboundTag string, listenPort int, protectAvailable bool) (string, LoopbackCredential, error) {
+	var zero LoopbackCredential
 	var root map[string]any
 	if err := json.Unmarshal([]byte(configJSON), &root); err != nil {
-		return "", fmt.Errorf("speedtest: parse config: %w", err)
+		return "", zero, fmt.Errorf("speedtest: parse config: %w", err)
 	}
 	if root == nil {
 		root = make(map[string]any)
 	}
 
 	tag := outboundTag
+	if tag != "" && !hasOutboundTag(root, tag) {
+		// 调用方给的 tag 在配置里不存在(自定义 config 型 profile 的
+		// mainTag 不一定等于真实出站 tag): 回退到自动挑选 —— 否则
+		// route.final 指向不存在的出站会让 box.New 直接失败,
+		// 整个 profile 永远测不了。
+		tag = ""
+	}
 	if tag == "" {
 		tag = firstTestableOutbound(root)
 	}
 	if tag == "" {
-		return "", errors.New("speedtest: no testable outbound in config")
+		return "", zero, errors.New("speedtest: no testable outbound in config")
 	}
 
-	// 仅保留回环 mixed 入站。
+	// 一次性随机凭据(审查 P2-7): 每个会话独立, 会话结束即失效。
+	credential, err := newLoopbackCredential()
+	if err != nil {
+		return "", zero, fmt.Errorf("speedtest: generate credential: %w", err)
+	}
+
+	// 仅保留回环 mixed 入站(带认证)。
 	root["inbounds"] = []any{map[string]any{
 		"type":        "mixed",
 		"tag":         SpeedtestInboundTag,
 		"listen":      "127.0.0.1",
 		"listen_port": listenPort,
+		"users": []any{map[string]any{
+			"username": credential.Username,
+			"password": credential.Password,
+		}},
 	}}
 	// 路由收敛: 丢弃规则, 全部走被测出站。
 	// ⚠️ auto_detect_interface 仅在 protect 可用时注入(= 有 platformInterface
@@ -332,9 +347,56 @@ func InjectSpeedtestLoopback(configJSON, outboundTag string, listenPort int, pro
 
 	out, err := json.Marshal(root)
 	if err != nil {
-		return "", fmt.Errorf("speedtest: re-marshal config: %w", err)
+		return "", zero, fmt.Errorf("speedtest: re-marshal config: %w", err)
 	}
-	return string(out), nil
+	return string(out), credential, nil
+}
+
+// LoopbackCredential 测速回环 mixed 入站的一次性随机凭据(审查 P2-7)。
+type LoopbackCredential struct {
+	Username string
+	Password string
+}
+
+// ProxyURL 该凭据对应的 socks5 代理地址(测量流量唯一的出口)。
+func (c LoopbackCredential) ProxyURL(port int) string {
+	u := url.URL{
+		Scheme: "socks5",
+		User:   url.UserPassword(c.Username, c.Password),
+		Host:   net.JoinHostPort("127.0.0.1", strconv.Itoa(port)),
+	}
+	return u.String()
+}
+
+// newLoopbackCredential 生成 8+8 字节的十六进制随机凭据 —— 纯 [0-9a-f],
+// 不需要任何 URL/JSON 转义, 也不会与 sing-box 的解析规则冲突。
+func newLoopbackCredential() (LoopbackCredential, error) {
+	var buf [16]byte
+	if _, err := rand.Read(buf[:]); err != nil {
+		return LoopbackCredential{}, err
+	}
+	return LoopbackCredential{
+		Username: hex.EncodeToString(buf[:8]),
+		Password: hex.EncodeToString(buf[8:]),
+	}, nil
+}
+
+// hasOutboundTag 判断 tag 是否真的存在于配置的 outbounds/endpoints 中。
+func hasOutboundTag(root map[string]any, tag string) bool {
+	if tag == "" {
+		return false
+	}
+	for _, key := range []string{"outbounds", "endpoints"} {
+		list, _ := root[key].([]any)
+		for _, o := range list {
+			if m, ok := o.(map[string]any); ok {
+				if t, _ := m["tag"].(string); t == tag {
+					return true
+				}
+			}
+		}
+	}
+	return false
 }
 
 // firstTestableOutbound 从 outbounds/endpoints 中找第一个可测出站 tag。

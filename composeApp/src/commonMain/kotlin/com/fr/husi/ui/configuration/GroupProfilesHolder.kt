@@ -10,6 +10,8 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.calculateEndPadding
+import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -49,6 +51,7 @@ import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalClipboard
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -118,6 +121,7 @@ import com.fr.husi.resources.settings
 import com.fr.husi.resources.share
 import com.fr.husi.resources.share_qr_nfc
 import com.fr.husi.resources.standard
+import com.fr.husi.resources.stop
 import com.fr.husi.resources.traffic
 import com.fr.husi.resources.unavailable
 import com.fr.husi.resources.warning
@@ -130,6 +134,7 @@ import io.github.vinceglb.filekit.dialogs.compose.rememberFileSaverLauncher
 import io.github.vinceglb.filekit.write
 import kotlinx.collections.immutable.toImmutableList
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.jetbrains.compose.resources.DrawableResource
@@ -179,6 +184,12 @@ internal fun GroupHolderScreen(
     val speedResults by SpeedTestManager.groupResults.collectAsStateWithLifecycle()
     LaunchedEffect(viewModel.group.id) {
         SpeedTestManager.loadGroupResults(viewModel.group.id)
+    }
+    // 测速模块的一次性提示（审查 P2-11）：菜单里"已有任务在跑"被拒、
+    // 批量结束时"并发连接不足"这类无法用持久状态表达的反馈，统一走
+    // 本屏已有的 snackbar。
+    LaunchedEffect(Unit) {
+        SpeedTestManager.notices.collect { showSnackbar(StringOrRes.Direct(it)) }
     }
 
     val dragDropListState = rememberDragDropSwipeLazyColumnState()
@@ -235,9 +246,41 @@ internal fun GroupHolderScreen(
 
     var showErrorAlert by remember { mutableStateOf<String?>(null) }
 
+    // 带宽测速横幅：独占列表上方一整行（不再浮在节点卡片上）。
+    // 2026-10-27 用户实测反馈：旧实现用 align(TopCenter) 悬浮，
+    // 横幅直接压住第一个节点卡片（截图里"带宽测速 1/37"糊在
+    // Shadowsocks 那张卡上），既挡内容又容易误触。
+    //
+    // 只在°被测分组°自己的页面显示：pager 每一页各有一份本组件，
+    // 否则滑到别的分组也会看到同一进度。
+    val bannerVisible = speedUiState.running &&
+        viewModel.group.id in speedUiState.groupIds
+    val layoutDirection = LocalLayoutDirection.current
+    // 横幅占位后，列表顶部不再重复让出顶栏高度，只留一点呼吸间隙。
+    val listContentPadding = if (bannerVisible) {
+        PaddingValues(
+            start = contentPadding.calculateStartPadding(layoutDirection),
+            top = 4.dp,
+            end = contentPadding.calculateEndPadding(layoutDirection),
+            bottom = contentPadding.calculateBottomPadding(),
+        )
+    } else {
+        contentPadding
+    }
+
     Column(
         modifier = modifier.fillMaxSize(),
     ) {
+        if (bannerVisible) {
+            SpeedTestBanner(
+                state = speedUiState,
+                onStop = { SpeedTestManager.cancel() },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = contentPadding.calculateTopPadding())
+                    .padding(horizontal = 16.dp, vertical = 6.dp),
+            )
+        }
         Row(
             modifier = Modifier
                 .weight(1f)
@@ -334,7 +377,7 @@ internal fun GroupHolderScreen(
             items = uiState.profiles.toImmutableList(),
             key = { it.profile.id },
             contentType = { 0 },
-            contentPadding = contentPadding,
+            contentPadding = listContentPadding,
             userScrollEnabled = true,
             onIndicesChangedViaDragAndDrop = { viewModel.submitReordered(it) },
         ) { index, item ->
@@ -376,63 +419,16 @@ internal fun GroupHolderScreen(
             }
         }
 
-        // 整组带宽测速进度条：悬浮在 tab 行正下方（align TopCenter +
-        // contentPadding.top 偏移），不占布局高度。
-        // ⚠️ 旧实现是插在列表上方的独立区块：本屏 Column 从屏幕顶开始
-        // （列表靠 contentPadding.top 让出顶栏），区块本体被搜索栏+tab
-        // 完全遮住、高度却把列表整体下顶 —— 表现为"测速时节点上方多出
-        // 一片空白"且进度信息不可见。浮层方案零位移且进度可见。
-        if (speedUiState.running) {
-            Column(
-                modifier = Modifier
-                    .align(Alignment.TopCenter)
-                    .padding(top = contentPadding.calculateTopPadding())
-                    .padding(horizontal = 16.dp, vertical = 6.dp)
-                    .clip(RoundedCornerShape(16.dp))
-                    .background(MaterialTheme.colorScheme.surfaceVariant)
-                    .padding(horizontal = 12.dp, vertical = 6.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
-                if (speedUiState.total > 0) {
-                    Text(
-                        text = "带宽测速 ${speedUiState.processed}/${speedUiState.total}",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.primary,
-                    )
-                    LinearProgressIndicator(
-                        progress = {
-                            if (speedUiState.total > 0) {
-                                speedUiState.processed.toFloat() / speedUiState.total
-                            } else {
-                                0f
-                            }
-                        },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(top = 4.dp),
-                    )
-                }
-                speedUiState.message?.let { msg ->
-                    Text(
-                        text = msg,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.tertiary,
-                        modifier = Modifier.padding(top = 2.dp),
-                    )
-                }
-            }
-        }
-        }
-
         BoxedVerticalScrollbar(
             modifier = Modifier
-                .padding(contentPadding)
+                .padding(listContentPadding)
                 .fillMaxHeight(),
             adapter = rememberScrollbarAdapter(scrollState = dragDropListState.lazyListState),
             style = defaultMaterialScrollbarStyle().copy(
                 thickness = 12.dp,
             ),
         )
+        }
         }
     }
 
@@ -1001,4 +997,77 @@ private fun DraggableSwipeableItemScope<ProfileItem>.ProxyCard(
             }
         },
     )
+}
+
+/**
+ * 整组带宽测速横幅 —— 独占列表上方一整行，测速结束自动消失。
+ *
+ * 2026-10-27 用户实测反馈两处问题，本组件一并解决：
+ *  1. 旧实现是 align(TopCenter) 悬浮层，直接压在第一个节点卡片上
+ *     （截图里"带宽测速 1/37"糊在 Shadowsocks 卡片上）→ 改占位布局；
+ *  2. 测速中无法中止（只能去连接测试菜单再点一次）→ 横幅本身可点，
+ *     点击即 [SpeedTestManager.cancel]，文案与图标都明确表达"点击停止"。
+ *
+ * 只读 [SpeedTestManager.UiState]，不含任何网络逻辑。
+ */
+@Composable
+private fun SpeedTestBanner(
+    state: SpeedTestManager.UiState,
+    onStop: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val progress = if (state.total > 0) {
+        (state.processed.toFloat() / state.total).coerceIn(0f, 1f)
+    } else {
+        0f
+    }
+    Column(
+        modifier = modifier
+            .clip(RoundedCornerShape(12.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .clickable(onClickLabel = stringResource(Res.string.stop), onClick = onStop)
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = if (state.total > 0) {
+                    "带宽测速 ${state.processed}/${state.total}"
+                } else {
+                    "带宽测速"
+                },
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.weight(1f),
+            )
+            Icon(
+                imageVector = vectorResource(Res.drawable.stop),
+                contentDescription = stringResource(Res.string.stop),
+                modifier = Modifier.size(18.dp),
+                tint = MaterialTheme.colorScheme.primary,
+            )
+            Text(
+                text = stringResource(Res.string.stop),
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.padding(start = 4.dp),
+            )
+        }
+        LinearProgressIndicator(
+            progress = { progress },
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 6.dp),
+        )
+        state.message?.let { msg ->
+            Text(
+                text = msg,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 4.dp),
+            )
+        }
+    }
 }

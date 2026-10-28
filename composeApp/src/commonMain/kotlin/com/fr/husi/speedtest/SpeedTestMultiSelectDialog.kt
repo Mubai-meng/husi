@@ -35,8 +35,8 @@ import kotlinx.coroutines.flow.firstOrNull
  * 一次性提交给 [SpeedTestManager.startGroup]（队列式批量测速）。
  *
  * ⚠️ 安卓 sing-box 频繁并发切换出站极易 panic 崩溃 —— 本对话框
- * 不含任何网络逻辑；勾选多少节点都由 SpeedTestManager 的并发
- * 钳制（≤2）+ Go 侧 4 会话硬上限兜底，逐个用独立一次性实例测速。
+ * 不含任何网络逻辑；勾选多少节点都由 SpeedTestManager 严格串行
+ * （同时只有 1 个一次性实例）+ Go 侧会话上限兜底，逐个测速。
  */
 @Composable
 fun SpeedTestMultiSelectDialog(
@@ -48,6 +48,8 @@ fun SpeedTestMultiSelectDialog(
         mutableStateOf<List<Pair<Long, String>>?>(null)
     }
     val checked = remember(groupId) { mutableStateOf(setOf<Long>()) }
+    /** 提交被拒的原因（审查 P2-11：之前静默关闭，用户没有任何反馈）。 */
+    var submitError by remember(groupId) { mutableStateOf<String?>(null) }
     // 响应式收集运行状态：不能直接调 SpeedTestManager.isRunning()（读
     // StateFlow.value 不建立订阅，状态变化不触发重组 —— 曾导致按钮停留在
     // "测速进行中…"禁用态，勾选后点开始也没反应，必须重启应用）。
@@ -75,8 +77,11 @@ fun SpeedTestMultiSelectDialog(
                         ?.filter { it.first in checked.value }
                         ?.map { SpeedTestManager.ProxyEntityParams(it.first, groupId) }
                         .orEmpty()
-                    SpeedTestManager.startGroup(groupId, idToGroup)
-                    onDismiss()
+                    if (SpeedTestManager.startGroup(groupId, idToGroup)) {
+                        onDismiss()
+                    } else {
+                        submitError = "已有测速任务进行中，请先停止当前任务"
+                    }
                 },
             ) {
                 Text(
@@ -96,6 +101,13 @@ fun SpeedTestMultiSelectDialog(
             when (list) {
                 null -> Text("加载中…")
                 else -> Column {
+                    submitError?.let {
+                        Text(
+                            text = it,
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier

@@ -147,7 +147,10 @@ fun Project.setupCommon() {
                 isShrinkResources = true
             }
             getByName("debug") {
-                applicationIdSuffix = "debug"
+                // 不加 applicationIdSuffix：debug 与 release 同包名（com.fr.husi）。
+                // 2026-10-27 用户明确要求 —— debug 可直接覆盖安装正式版，共用同一份
+                // 应用数据（Room 库 / DataStore 设置），迁移验证不必再走两套包名。
+                // 两个 buildType 共用同一 release keystore 签名，签名一致才能互相覆盖。
                 isDebuggable = true
                 isJniDebuggable = true
             }

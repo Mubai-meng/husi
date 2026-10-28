@@ -48,6 +48,7 @@ import com.fr.husi.resources.need_restart
 import com.fr.husi.resources.ntp_category
 import com.fr.husi.resources.protocol_settings
 import com.fr.husi.resources.route_options
+import com.fr.husi.resources.speed_test_settings
 import com.fr.husi.resources.system_daemon
 import com.fr.husi.ui.LocalSnackbarEmitter
 import com.fr.husi.ui.NavRoutes
@@ -119,6 +120,7 @@ fun SettingsPageScreen(
         NavRoutes.SettingsPage.Kind.Misc -> Res.string.cag_misc
         NavRoutes.SettingsPage.Kind.Ntp -> Res.string.ntp_category
         NavRoutes.SettingsPage.Kind.AppUpdate -> Res.string.app_update_settings
+        NavRoutes.SettingsPage.Kind.SpeedTest -> Res.string.speed_test_settings
     }
 
     Scaffold(
@@ -206,6 +208,11 @@ fun SettingsPageScreen(
                             )
                         }
                         NavRoutes.SettingsPage.Kind.AppUpdate -> platformAppUpdateSettings()
+                        // 带宽测速设置：只读写测速专属 DataStore，改完即时生效
+                        // （下一轮测速开始时取快照），不需要 reload 服务。
+                        NavRoutes.SettingsPage.Kind.SpeedTest -> preferenceGroup {
+                            SpeedTestSettingsGroup()
+                        }
                     }
                 }
 

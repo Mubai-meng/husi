@@ -30,6 +30,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -72,8 +73,8 @@ import com.fr.husi.compose.material3.Icon
 import com.fr.husi.compose.material3.Text
 import com.fr.husi.compose.preferenceGroup
 import com.fr.husi.compose.withNavigation
+import com.fr.husi.database.ProfileManager
 import com.fr.husi.database.RuleEntity
-import com.fr.husi.database.SagerDatabase
 import com.fr.husi.fmt.RuleItem
 import com.fr.husi.fmt.SingBoxOptions
 import com.fr.husi.ktx.blankAsNull
@@ -165,7 +166,6 @@ import com.fr.husi.ui.tools.RuleSetMatchDialog
 import io.github.oikvpqya.compose.fastscroller.material3.defaultMaterialScrollbarStyle
 import io.github.oikvpqya.compose.fastscroller.rememberScrollbarAdapter
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import me.zhanghai.compose.preference.ListPreferenceType
 import org.jetbrains.compose.resources.stringResource
@@ -178,6 +178,24 @@ private const val CUSTOM_OUTBOUND_OPTION = -5L // Placeholder
 
 // If too big, the performance is low and no one will check it patiently.
 private const val RULE_SET_SUGGESTION_LIMIT = 64
+
+/**
+ * 出站显示名（内置出站 / 节点名 / 未设置）。
+ *
+ * 审查 §四.3：这里原本是 `runBlocking { proxyDao.getById(...) }` —— 直接在
+ * 组合期同步查库，节点表大或 IO 抖动时掉帧，且嵌套在 LazyColumn 的
+ * summary lambda 里**每次重组都查一次**。改为 produceState：只在 outbound
+ * 变化时查一次，期间先用内置名/未设置占位。
+ */
+@Composable
+private fun outboundSummaryText(outbound: Long): String {
+    builtinOutboundName(outbound)?.let { return stringResource(it) }
+    val fallback = stringResource(Res.string.not_set)
+    val name by produceState<String?>(initialValue = null, outbound) {
+        value = runCatching { ProfileManager.getProfile(outbound)?.displayName() }.getOrNull()
+    }
+    return name ?: fallback
+}
 
 @ExperimentalMaterial3Api
 @Composable
@@ -842,10 +860,7 @@ private fun RouteSettings(
                                 )
                             },
                             summary = {
-                                val text = builtinOutboundName(uiState.outbound)?.let { stringResource(it) }
-                                    ?: runBlocking { SagerDatabase.proxyDao.getById(uiState.outbound) }?.displayName()
-                                    ?: stringResource(Res.string.not_set)
-                                Text(text)
+                                Text(outboundSummaryText(uiState.outbound))
                             },
                             type = ListPreferenceType.DROPDOWN_MENU,
                             valueToText = {
@@ -883,10 +898,7 @@ private fun RouteSettings(
                                 )
                             },
                             summary = {
-                                val text = builtinOutboundName(uiState.outbound)?.let { stringResource(it) }
-                                    ?: runBlocking { SagerDatabase.proxyDao.getById(uiState.outbound) }?.displayName()
-                                    ?: stringResource(Res.string.not_set)
-                                Text(text)
+                                Text(outboundSummaryText(uiState.outbound))
                             },
                             type = ListPreferenceType.DROPDOWN_MENU,
                             valueToText = {

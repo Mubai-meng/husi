@@ -55,8 +55,14 @@ class AndroidPlatformInterface : PlatformInterface {
         destinationPort: Int,
     ): ConnectionOwner {
         // 内核查不到属主是常态竞态（短命 UDP/DNS 流、TCP 已关闭），
-        // 连接列表每条都会查一次，刷 ERROR 日志没有价值 —— 只抛错给
-        // Go 侧按 not-found 处理（2026-10-04 日志：2 秒内 30+ 条）。
+        // 连接列表每条都会查一次，刷 ERROR 日志没有价值。
+        //
+        // 2026-10-26 实机日志复核：2 秒内仍有 30+ 条
+        // `ERROR [AndroidPlatformInterface] java.lang.IllegalStateException:
+        // android: connection owner not found` —— 上一轮的"只抛错"注释落地时
+        // 漏掉了 Logs.e(e)，异常仍按 ERROR 打印。这里保留抛错语义（Go 侧
+        // route 的 processCache 会把这条 5-tuple 连同错误一起缓存，不会重复
+        // 查询），但降级为 debug 日志，日志页不再被它淹掉。
         try {
             val uid = if (SDK_INT >= Build.VERSION_CODES.Q) {
                 resolveAndroidRepository().connectivity.getConnectionOwnerUid(
@@ -78,7 +84,11 @@ class AndroidPlatformInterface : PlatformInterface {
             val packages = PackageCache.uidMap[uid]
             return ConnectionOwner(uid, packages?.toStringIterator(packages.size))
         } catch (e: Exception) {
-            Logs.e(e)
+            Logs.d(
+                "findConnectionOwner miss: $sourceAddress:$sourcePort -> " +
+                    "$destinationAddress:$destinationPort",
+                e,
+            )
             throw e
         }
     }

@@ -1,7 +1,6 @@
 package libcore
 
 import (
-	"fmt"
 	"testing"
 	"time"
 
@@ -10,7 +9,7 @@ import (
 	"github.com/xchacha20-poly1305/husi/libcore/v2/speedtest"
 )
 
-// TestSpeedtestE2E 桌面端到端: 回环注入 + 独立实例 + speedtest-go 完整链路。
+// TestSpeedtestE2E 桌面端到端: 回环注入 + 独立实例 + 自研发现/计量完整链路。
 // 出站用本机真实代理(socks5 127.0.0.1:2080), 模拟"经被测出站"的完整路径。
 // 通过 = 链路本身正确; 失败 = 复现真机错误并拿到更完整的诊断信息。
 func TestSpeedtestE2E(t *testing.T) {
@@ -19,7 +18,7 @@ func TestSpeedtestE2E(t *testing.T) {
 	if err != nil {
 		t.Fatalf("pick port: %v", err)
 	}
-	testConfig, err := speedtest.InjectSpeedtestLoopback(configJSON, "target", port, false)
+	testConfig, cred, err := speedtest.InjectSpeedtestLoopback(configJSON, "target", port, false)
 	if err != nil {
 		t.Fatalf("inject: %v", err)
 	}
@@ -45,7 +44,9 @@ func TestSpeedtestE2E(t *testing.T) {
 	go func() {
 		defer close(done)
 		result, runErr = speedtest.Run(ctx, speedtest.Options{
-			ProxyURL:        fmt.Sprintf("socks5://127.0.0.1:%d", port),
+			// 带认证: 回环入站现在强制用户名/密码(P2-7), 这条端到端
+			// 用例同时验证"认证凭据 → socks5 URL → sing-box 入站"整链。
+			ProxyURL:        cred.ProxyURL(port),
 			MaxConnections:  2,
 			DownloadSeconds: 5,
 			UploadSeconds:   5,

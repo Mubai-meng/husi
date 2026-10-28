@@ -53,6 +53,8 @@ import com.fr.husi.resources.remote_control
 import com.fr.husi.resources.route_options
 import com.fr.husi.resources.router
 import com.fr.husi.resources.settings
+import com.fr.husi.resources.speed
+import com.fr.husi.resources.speed_test_settings
 import com.fr.husi.resources.system_daemon
 import com.fr.husi.resources.timelapse
 import com.fr.husi.resources.tools_network
@@ -185,6 +187,18 @@ fun SettingsScreen(
                                 onClick = { openSettingsPage(NavRoutes.SettingsPage.Kind.AppUpdate) },
                             )
                         }
+                        // 带宽测速（审查 P2-10 收尾）：这些参数只影响节点卡片
+                        // 上的"测速此节点/测速整组"，与延迟测试互不相干。
+                        Preference(
+                            title = { Text(stringResource(Res.string.speed_test_settings)) },
+                            icon = {
+                                MaskedIcon(
+                                    Res.drawable.speed,
+                                    color = IconMaskColors.IconCyan,
+                                )
+                            },
+                            onClick = { openSettingsPage(NavRoutes.SettingsPage.Kind.SpeedTest) },
+                        )
                     }
 
                     item { PreferenceCategory(text = { Text(stringResource(Res.string.more)) }) }

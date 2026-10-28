@@ -652,4 +652,21 @@
     <string name="app_update_installing">安裝中…</string>
     <string name="app_update_install_failed">安裝失敗：%1$s</string>
     <string name="app_update_no_matching_asset">沒有與此裝置匹配的安裝套件。請開啟發布頁面手動下載。</string>
+    <!-- 頻寬測速 -->
+    <string name="speed_test_settings">頻寬測速</string>
+    <string name="speed_test_connections">並行連線數</string>
+    <string name="speed_test_connections_sum">單節點測速使用的 TCP 連線數。經代理跨境鏈路 RTT 高，太少會明顯低估頻寬</string>
+    <string name="speed_test_download_seconds">下載時長</string>
+    <string name="speed_test_download_seconds_sum">下載階段時長上限；單節點測速按此時長跑滿，批次測速按預算壓縮</string>
+    <string name="speed_test_upload_seconds">上傳時長</string>
+    <string name="speed_test_upload_seconds_sum">上傳階段時長上限；批次測速不測上傳</string>
+    <string name="speed_test_measure_upload">測試上傳速度</string>
+    <string name="speed_test_measure_upload_sum">上傳會消耗節點流量，預設關閉</string>
+    <string name="speed_test_auto_remove">自動剔除無法連線的節點</string>
+    <string name="speed_test_auto_remove_sum">只刪除「連不上」的節點；逾時的不刪（逾時往往只是時長不夠）</string>
+    <string name="speed_test_history_keep">每節點保留結果筆數</string>
+    <string name="speed_test_history_keep_sum">每輪批次測速結束後清理較早的記錄</string>
+    <string name="speed_test_unit_connections">%1$d</string>
+    <string name="speed_test_unit_seconds">%1$d 秒</string>
+    <string name="speed_test_unit_records">%1$d</string>
 </resources>

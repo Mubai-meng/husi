@@ -21,6 +21,7 @@ internal actual object SpeedTestDatabaseProvider {
         )
             .setDriver(BundledSQLiteDriver())
             .setQueryCoroutineContext(Dispatchers.IO)
+            .addMigrations(SpeedTestDatabase.MIGRATION_1_2)
             .build()
     }
 }

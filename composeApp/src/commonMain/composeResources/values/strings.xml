@@ -960,4 +960,21 @@
     <string name="tailcat_derp_servers">DERP Servers</string>
     <string name="tailscale_advertise_fake_dns_routes">Advertise Fake DNS Routes</string>
     <string name="tailscale_advertise_fake_dns_routes_summary">Advertise the Fake DNS ranges as subnet routes while Fake DNS is enabled</string>
+    <!-- Bandwidth speed test -->
+    <string name="speed_test_settings">Bandwidth Test</string>
+    <string name="speed_test_connections">Concurrent connections</string>
+    <string name="speed_test_connections_sum">TCP connections used for one node. Too few underestimates throughput over high-RTT links</string>
+    <string name="speed_test_download_seconds">Download duration</string>
+    <string name="speed_test_download_seconds_sum">Cap for the download phase; single-node runs use the full duration</string>
+    <string name="speed_test_upload_seconds">Upload duration</string>
+    <string name="speed_test_upload_seconds_sum">Cap for the upload phase, skipped for batch runs</string>
+    <string name="speed_test_measure_upload">Measure upload</string>
+    <string name="speed_test_measure_upload_sum">Upload consumes node traffic, so it is off by default</string>
+    <string name="speed_test_auto_remove">Remove unreachable nodes</string>
+    <string name="speed_test_auto_remove_sum">Only removes nodes that cannot be connected at all. Timeouts are kept</string>
+    <string name="speed_test_history_keep">Results kept per node</string>
+    <string name="speed_test_history_keep_sum">Older results are pruned after each batch</string>
+    <string name="speed_test_unit_connections">%1$d</string>
+    <string name="speed_test_unit_seconds">%1$d s</string>
+    <string name="speed_test_unit_records">%1$d</string>
 </resources>

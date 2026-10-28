@@ -9,12 +9,14 @@ import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import androidx.annotation.RequiresApi
+import com.fr.husi.ktx.Logs
 import com.fr.husi.repository.resolveAndroidRepository
 import kotlinx.coroutines.CompletableDeferred
-import kotlinx.coroutines.DelicateCoroutinesApi
+import kotlinx.coroutines.CoroutineExceptionHandler
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.ObsoleteCoroutinesApi
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.channels.actor
 import kotlinx.coroutines.runBlocking
 
@@ -44,8 +46,20 @@ internal object AndroidDefaultNetworkListener {
         class Lost(val network: Network) : NetworkMessage()
     }
 
-    @OptIn(ObsoleteCoroutinesApi::class, DelicateCoroutinesApi::class)
-    private val networkActor = GlobalScope.actor<NetworkMessage>(Dispatchers.Unconfined) {
+    /**
+     * 审查 §四.2：actor 原来挂在 `GlobalScope` 上 —— 没有异常出口，actor
+     * 内部一旦抛错整个监听器就静默死亡（表现为"网络切换后 sing-box 不再
+     * 跟随默认网络"，日志里什么都没有）。改为专用作用域 + 异常处理，
+     * actor 崩溃时至少能在日志页看到原因。
+     */
+    private val actorScope = CoroutineScope(
+        SupervisorJob() + Dispatchers.Unconfined + CoroutineExceptionHandler { _, throwable ->
+            Logs.e("default network listener actor", throwable)
+        },
+    )
+
+    @OptIn(ObsoleteCoroutinesApi::class)
+    private val networkActor = actorScope.actor<NetworkMessage> {
         val listeners = mutableMapOf<Any, suspend (Network?) -> Unit>()
         var network: Network? = null
         val pendingRequests = arrayListOf<NetworkMessage.Get>()

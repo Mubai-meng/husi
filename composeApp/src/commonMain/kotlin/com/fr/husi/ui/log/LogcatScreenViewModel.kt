@@ -257,6 +257,12 @@ class LogcatScreenViewModel(
                     val entries = batch.messagesList.map { it.toLogEntry() }
                     liveLogs.update { it.appendBounded(entries, maxEntries) }
                 }
+            } catch (e: CancellationException) {
+                // 退出日志页 / 切连接时 onCleared+job.cancel() 会让 collect
+                // 抛 JobCancellationException —— 这是正常的生命周期收尾，
+                // 不是流故障。2026-10-27 日志实测：整条 WARN + 40 行堆栈
+                // 全部来自这里（用户每次离开日志页都会刷一次）。
+                throw e
             } catch (e: Exception) {
                 Logs.w("subscribe logs", e)
             }

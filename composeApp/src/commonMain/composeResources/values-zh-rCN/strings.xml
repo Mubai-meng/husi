@@ -884,4 +884,21 @@
     <string name="tailcat_derp_servers">DERP 服务器</string>
     <string name="tailscale_advertise_fake_dns_routes">通告 Fake DNS 网段</string>
     <string name="tailscale_advertise_fake_dns_routes_summary">启用 Fake DNS 时，将 Fake DNS 网段作为子网路由通告</string>
+    <!-- 带宽测速 -->
+    <string name="speed_test_settings">带宽测速</string>
+    <string name="speed_test_connections">并发连接数</string>
+    <string name="speed_test_connections_sum">单节点测速使用的 TCP 连接数。经代理跨境链路 RTT 高，太少会明显低估带宽</string>
+    <string name="speed_test_download_seconds">下载时长</string>
+    <string name="speed_test_download_seconds_sum">下载阶段时长上限；单节点测速按此时长跑满，批量测速按预算压缩</string>
+    <string name="speed_test_upload_seconds">上传时长</string>
+    <string name="speed_test_upload_seconds_sum">上传阶段时长上限；批量测速不测上传</string>
+    <string name="speed_test_measure_upload">测试上传速度</string>
+    <string name="speed_test_measure_upload_sum">上传会消耗节点流量，默认关闭</string>
+    <string name="speed_test_auto_remove">自动剔除无法连接的节点</string>
+    <string name="speed_test_auto_remove_sum">只删除"连不上"的节点；超时的不删（超时往往只是时长不够）</string>
+    <string name="speed_test_history_keep">每节点保留结果条数</string>
+    <string name="speed_test_history_keep_sum">每轮批量测速结束后清理更早的记录</string>
+    <string name="speed_test_unit_connections">%1$d</string>
+    <string name="speed_test_unit_seconds">%1$d 秒</string>
+    <string name="speed_test_unit_records">%1$d</string>
 </resources>

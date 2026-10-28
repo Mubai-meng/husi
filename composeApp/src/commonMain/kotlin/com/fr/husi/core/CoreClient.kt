@@ -402,7 +402,7 @@ class KurpcCoreClient internal constructor(
                     channel().serverStreaming(method, request).parseEach(method, parse).catch { error ->
                         // Retrying in silence turns a broken stream into an empty panel with
                         // nothing to go on.
-                        Logs.w("core client stream: $method", error.toCoreRpcException())
+                        logStreamFailure(method, error.toCoreRpcException())
                     },
                 )
             } catch (e: CancellationException) {
@@ -419,6 +419,25 @@ class KurpcCoreClient internal constructor(
             delay(delayDuration)
         }
     }.buffer(Channel.UNLIMITED)
+
+    /**
+     * 流断开后的日志分级。
+     *
+     * `daemon.StartedService` 的各类 `Subscribe*Status` 在服务未进入
+     * STARTED/STARTING 时由 `waitForStarted` 直接返回 `os.ErrInvalid`
+     * （gRPC 侧表现为 `UNKNOWN: invalid argument`）。这不是"流坏了"，而是
+     * "现在没有可订阅的东西" —— Tailscale / OpenVPN / OpenConnect 三条流
+     * 在服务运行时也会一直重试（2026-10-26 实机日志：三份完整堆栈反复出现，
+     * 把真正有用的行全挤掉了）。这类状态降到 debug；其余错误保持 WARN，
+     * 真正的流故障仍然可见。
+     */
+    private fun logStreamFailure(method: String, error: CoreRpcException) {
+        if (error.notReadyYet()) {
+            Logs.d("core client stream (not ready): $method", error)
+        } else {
+            Logs.w("core client stream: $method", error)
+        }
+    }
 
     override fun subscribeServiceStatus(): Flow<ServiceStatus> =
         stream(Methods.SUBSCRIBE_SERVICE_STATUS) { ServiceStatus.parseFrom(it) }
@@ -1097,6 +1116,17 @@ internal fun Throwable.toCoreRpcException(): CoreRpcException = when (this) {
     is TransportException, is ChannelClosedException ->
         CoreRpcException(RpcStatus.Code.UNAVAILABLE, message ?: toString(), this)
     else -> CoreRpcException(RpcStatus.Code.UNKNOWN, message ?: toString(), this)
+}
+
+/**
+ * 服务尚未就绪（`waitForStarted` 拒绝订阅）—— 服务未启动时的正常返回值，
+ * 不是流故障。daemon 侧 `os.ErrInvalid` / `status.Error(InvalidArgument)` 都归此类。
+ */
+internal fun CoreRpcException.notReadyYet(): Boolean {
+    if (code == RpcStatus.Code.FAILED_PRECONDITION) return true
+    val text = message
+    if (code != RpcStatus.Code.UNKNOWN && code != RpcStatus.Code.INVALID_ARGUMENT) return false
+    return text.contains("invalid argument") || text.contains("not started")
 }
 
 /** Parses each message; one that does not parse is logged and skipped, not fatal. */

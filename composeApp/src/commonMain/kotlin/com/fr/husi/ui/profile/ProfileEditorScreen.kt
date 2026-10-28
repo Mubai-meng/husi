@@ -88,7 +88,6 @@ import com.fr.husi.ui.stringOrRes
 import io.github.oikvpqya.compose.fastscroller.material3.defaultMaterialScrollbarStyle
 import io.github.oikvpqya.compose.fastscroller.rememberScrollbarAdapter
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.runBlocking
 import org.jetbrains.compose.resources.StringResource
 import org.jetbrains.compose.resources.stringResource
 import org.jetbrains.compose.resources.vectorResource
@@ -334,6 +333,23 @@ internal fun <T : AbstractBean> ProfileSettingsScreenScaffold(
     val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
     var showDeleteAlert by remember { mutableStateOf(false) }
     var showExtendMenu by remember { mutableStateOf(false) }
+    // 是否存在其它基础分组（决定菜单里是否出现"移动"）。
+    // 审查 §四.3：原本写在菜单 lambda 里 `runBlocking { allGroups().first()... }`
+    // —— 组合期同步查库，菜单展开时掉帧。改为异步预取：
+    // 打开菜单时后台数一次，期间先按"不可移动"占位。
+    val moveAllowed by produceState(
+        initialValue = false,
+        viewModel.isNew,
+        showExtendMenu,
+    ) {
+        value = if (viewModel.isNew || !showExtendMenu) {
+            false
+        } else {
+            runCatching {
+                SagerDatabase.groupDao.allGroups().first().count { it.type == GroupType.BASIC } > 1
+            }.getOrDefault(false)
+        }
+    }
 
     BackHandler(enabled = isDirty) {
         showBackAlert = true
@@ -408,11 +424,7 @@ internal fun <T : AbstractBean> ProfileSettingsScreenScaffold(
                                     platformSupportShortcut()
                                             && !viewModel.isNew
                                             && !viewModel.isSubscription
-                                val showMove = !viewModel.isNew && runBlocking {
-                                    SagerDatabase.groupDao.allGroups().first().filter {
-                                        it.type == GroupType.BASIC
-                                    }.size > 1
-                                }
+                                val showMove = !viewModel.isNew && moveAllowed
                                 val hasFirstGroup = showCreateShortCut || showMove
                                 if (hasFirstGroup) {
                                     DropdownMenuGroup(

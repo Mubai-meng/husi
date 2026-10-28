@@ -78,6 +78,7 @@ sealed class NavRoutes : NavKey {
             Misc,
             Ntp,
             AppUpdate,
+            SpeedTest,
         }
     }
 
