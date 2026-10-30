@@ -29,6 +29,7 @@ import androidx.compose.ui.util.fastCoerceIn
 import com.fr.husi.compose.material3.Text
 import com.fr.husi.ktx.formatBytes
 import com.fr.husi.resources.Res
+import com.fr.husi.resources.dashboard_speed
 import com.fr.husi.resources.direct
 import com.fr.husi.resources.proxy
 import com.fr.husi.resources.speed
@@ -50,7 +51,8 @@ internal fun ProxySpeedCard(
     modifier: Modifier = Modifier,
 ) {
     SpeedCard(
-        title = stringResource(Res.string.proxy),
+        // A remote core reports one rate for all its traffic, direct included.
+        title = stringResource(if (uiState.isRemote) Res.string.dashboard_speed else Res.string.proxy),
         txRate = uiState.txRateProxy,
         rxRate = uiState.rxRateProxy,
         history = uiState.proxySpeedHistory,

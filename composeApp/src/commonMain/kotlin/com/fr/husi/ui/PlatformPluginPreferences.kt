@@ -3,6 +3,6 @@ package com.fr.husi.ui
 import androidx.compose.foundation.lazy.LazyListScope
 
 internal expect fun LazyListScope.platformPluginPreferences(
-    isExpert: Boolean,
+    isCustomPluginPrefixEnabled: Boolean,
     needRestart: () -> Unit,
 )

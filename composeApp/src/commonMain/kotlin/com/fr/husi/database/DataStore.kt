@@ -10,6 +10,7 @@ import com.fr.husi.Key
 import com.fr.husi.NETWORK_QUALITY_CONFIG_URL
 import com.fr.husi.NetworkInterfaceStrategy
 import com.fr.husi.ProtocolProvider
+import com.fr.husi.STUN_SERVERS
 import com.fr.husi.TrafficSortMode
 import com.fr.husi.bg.ServiceState
 import com.fr.husi.compose.theme.DEFAULT
@@ -26,8 +27,10 @@ import com.fr.husi.repository.resolveRepository
 import com.fr.husi.utils.AppVersion
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.firstOrNull
+import kotlinx.coroutines.flow.map
 
 object DataStore {
 
@@ -60,6 +63,24 @@ object DataStore {
                 configurationStore.putString(Key.TCP_KEEP_ALIVE_INTERVAL_0, "${seconds}s")
             }
             configurationStore.remove(keyTCPKeepAliveInterval)
+        }
+
+        // The expert switch unlocked every feature now listed in the advanced feature list.
+        val legacyExpert = configurationStore.boolean("isExpert")
+        if (legacyExpert.getBlocking()) {
+            if (configurationStore.getString(Key.ADVANCED_FEATURES) == null) {
+                configurationStore.putString(
+                    Key.ADVANCED_FEATURES,
+                    listOf(
+                        Key.ADVANCED_DEBUG,
+                        Key.DEBUG_LISTEN,
+                        Key.ANCHOR_SSID,
+                        Key.CUSTOM_PLUGIN_PREFIX,
+                        Key.ADVANCED_TAILSCALE_SSH_SERVER,
+                    ).joinToString("\n"),
+                )
+            }
+            configurationStore.remove(legacyExpert.key)
         }
     }
 
@@ -106,7 +127,28 @@ object DataStore {
         return groups.find { it.type == GroupType.BASIC }!!.id
     }
 
-    val isExpert = configurationStore.boolean(Key.APP_EXPERT)
+    val advancedFeatures = configurationStore.string(Key.ADVANCED_FEATURES)
+
+    /**
+     * The value of [key] in [advancedFeatures], or null when no line names it.
+     *
+     * Each line of the list is `key=value` or a bare `key`; a bare key enables a boolean
+     * feature and reads back as an empty value. A later line overrides an earlier one.
+     */
+    fun advancedFeatureFlow(key: String): Flow<String?> = advancedFeatures.flow()
+        .map { list ->
+            var value: String? = null
+            for (line in list.lineSequence()) {
+                if (line.substringBefore('=').trim() == key) {
+                    value = line.substringAfter('=', "").trim()
+                }
+            }
+            value
+        }
+        .distinctUntilChanged()
+
+    suspend fun advancedFeature(key: String): String? = advancedFeatureFlow(key).first()
+
     val appTheme = configurationStore.int(Key.APP_THEME) { DEFAULT }
     val nightTheme = configurationStore.int(Key.NIGHT_THEME)
     val appLanguage = configurationStore.string(Key.APP_LANGUAGE)
@@ -218,6 +260,7 @@ object DataStore {
     val systemProxy = configurationStore.boolean(Key.SYSTEM_PROXY)
     val httpProxyBypass = configurationStore.string(Key.HTTP_PROXY_BYPASS) { DEFAULT_HTTP_BYPASS }
 
+    val ipTestServers = configurationStore.string(Key.IP_TEST_SERVERS) { STUN_SERVERS }
     val connectionTestURL = configurationStore.string(Key.CONNECTION_TEST_URL) { CONNECTION_TEST_URL }
     val connectionTestConcurrent = configurationStore.int(Key.CONNECTION_TEST_CONCURRENT) { 5 }
     val connectionTestTimeout = configurationStore.int(Key.CONNECTION_TEST_TIMEOUT) { 3000 }

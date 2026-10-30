@@ -1,25 +1,33 @@
 package com.fr.husi.ui.settings
 
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.unit.dp
 import com.fr.husi.CertProvider
 import com.fr.husi.compose.IconMaskColors
-import com.fr.husi.compose.collectAsStateWithLifecycle
 import com.fr.husi.compose.IconMaskShapes
 import com.fr.husi.compose.LinkOrContentTextField
 import com.fr.husi.compose.ListPreference
 import com.fr.husi.compose.MaskedIcon
+import com.fr.husi.compose.MultilineTextField
 import com.fr.husi.compose.SliderPreference
 import com.fr.husi.compose.SwitchPreference
 import com.fr.husi.compose.TextFieldPreference
+import com.fr.husi.compose.collectAsStateWithLifecycle
 import com.fr.husi.compose.material3.Text
 import com.fr.husi.database.DataStore
+import com.fr.husi.ktx.blankAsNull
 import com.fr.husi.ktx.contentOrUnset
 import com.fr.husi.resources.Res
+import com.fr.husi.resources.advanced_features
+import com.fr.husi.resources.advanced_features_summary
 import com.fr.husi.resources.apps
 import com.fr.husi.resources.cast_connected
 import com.fr.husi.resources.cert_chrome
@@ -27,8 +35,12 @@ import com.fr.husi.resources.certificate_authority
 import com.fr.husi.resources.connection_test_ignore_handshake_time
 import com.fr.husi.resources.connection_test_unified_delay
 import com.fr.husi.resources.connection_test_url
+import com.fr.husi.resources.developer_mode
 import com.fr.husi.resources.fast_forward
 import com.fr.husi.resources.follow_system
+import com.fr.husi.resources.ip_test_servers
+import com.fr.husi.resources.ip_test_servers_description
+import com.fr.husi.resources.ip_test_servers_summary
 import com.fr.husi.resources.mozilla
 import com.fr.husi.resources.push_pin
 import com.fr.husi.resources.question_mark
@@ -65,6 +77,25 @@ internal fun MiscSettingsGroup(
         valueToText = { it },
     ) { value, onValueChange, onOk ->
         LinkOrContentTextField(value, onValueChange, onOk)
+    }
+
+    val ipTestServers by DataStore.ipTestServers.collectAsStateWithLifecycle()
+    TextFieldPreference(
+        value = ipTestServers,
+        onValueChange = { DataStore.ipTestServers.setBlocking(it) },
+        title = { Text(stringResource(Res.string.ip_test_servers)) },
+        textToValue = { it },
+        valueToText = { it },
+        icon = { MaskedIcon(Res.drawable.cast_connected, color = IconMaskColors.IconCyan) },
+        summary = { Text(stringResource(Res.string.ip_test_servers_summary)) },
+    ) { value, onValueChange, onOk ->
+        Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            Text(
+                text = stringResource(Res.string.ip_test_servers_description),
+                style = MaterialTheme.typography.bodySmall,
+            )
+            MultilineTextField(value, onValueChange, onOk)
+        }
     }
 
     val connectionTestConcurrentValue by DataStore.connectionTestConcurrent.collectAsStateWithLifecycle()
@@ -166,4 +197,31 @@ internal fun MiscSettingsGroup(
     DisableProcessTextPreference()
     EnableTaskerPreference()
     HideLauncherIconPreference()
+
+    val advancedFeaturesValue by DataStore.advancedFeatures.collectAsStateWithLifecycle()
+    TextFieldPreference(
+        value = advancedFeaturesValue,
+        onValueChange = {
+            DataStore.advancedFeatures.setBlocking(it)
+            needReload()
+        },
+        title = { Text(stringResource(Res.string.advanced_features)) },
+        textToValue = { it },
+        icon = {
+            MaskedIcon(
+                Res.drawable.developer_mode,
+                color = IconMaskColors.IconCoral,
+                shape = IconMaskShapes.risk(),
+            )
+        },
+        summary = {
+            Text(
+                advancedFeaturesValue.blankAsNull()
+                    ?: stringResource(Res.string.advanced_features_summary),
+            )
+        },
+        valueToText = { it },
+    ) { value, onValueChange, onOk ->
+        MultilineTextField(value, onValueChange, onOk)
+    }
 }

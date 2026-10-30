@@ -53,7 +53,6 @@ import com.fr.husi.compose.material3.Text
 import com.fr.husi.compose.setPlainText
 import com.fr.husi.compose.withNavigation
 import com.fr.husi.core.CoreVersionCache
-import com.fr.husi.database.DataStore
 import com.fr.husi.proto.v1.GetVersionResponse
 import com.fr.husi.resources.Res
 import com.fr.husi.resources.android
@@ -215,11 +214,6 @@ fun AboutScreen(
                                 title = stringResource(Res.string.build_environment),
                                 description = buildEnvironment,
                                 onClick = { putToClipboard(buildEnvironment) },
-                                onLongClick = {
-                                    val isExpert = !DataStore.isExpert.getBlocking()
-                                    DataStore.isExpert.setBlocking(isExpert)
-                                    snackbar.show(StringOrRes.Direct("isExpert: $isExpert"))
-                                },
                             )
 
                             if (shouldRequestBattery) {

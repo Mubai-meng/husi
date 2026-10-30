@@ -12,9 +12,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.fr.husi.Key
 import com.fr.husi.compose.BoxedVerticalScrollbar
 import com.fr.husi.compose.ProvidePreferenceLocals
-import com.fr.husi.compose.collectAsStateWithLifecycle
+import com.fr.husi.compose.collectAdvancedFeatureAsStateWithLifecycle
 import com.fr.husi.compose.IconMaskColors
 import com.fr.husi.compose.MaskedIcon
 import com.fr.husi.compose.Preference
@@ -75,7 +76,7 @@ fun SettingsScreen(
     openRemoteControl: () -> Unit,
 ) {
     val listState = rememberLazyListState()
-    val isExpert by DataStore.isExpert.collectAsStateWithLifecycle()
+    val debugFeature by collectAdvancedFeatureAsStateWithLifecycle(Key.ADVANCED_DEBUG)
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
@@ -233,7 +234,7 @@ fun SettingsScreen(
                             },
                             onClick = { openTool(NavRoutes.ToolsPage.Backup) },
                         )
-                        if (isExpert) {
+                        if (debugFeature != null) {
                             Preference(
                                 title = { Text("DEBUG") },
                                 icon = {

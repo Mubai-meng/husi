@@ -14,6 +14,7 @@ import com.fr.husi.TrafficSortMode
 import com.fr.husi.bg.BackendState
 import com.fr.husi.bg.DefaultNetworkListener
 import com.fr.husi.bg.SpeedStats
+import com.fr.husi.bg.routeGeoDir
 import com.fr.husi.core.CoreClient
 import com.fr.husi.core.formatConnectionTime
 import com.fr.husi.core.remote.RemoteControlManager
@@ -22,6 +23,8 @@ import com.fr.husi.database.DataStore
 import com.fr.husi.fmt.SingBoxOptions
 import com.fr.husi.fmt.proxyDisplayName
 import com.fr.husi.ktx.Logs
+import com.fr.husi.ktx.listByLineIgnoringComments
+import com.fr.husi.ktx.readableMessage
 import com.fr.husi.ktx.runOnDefaultDispatcher
 import com.fr.husi.ktx.runOnIoDispatcher
 import com.fr.husi.platform.PlatformInfo
@@ -31,9 +34,15 @@ import com.fr.husi.proto.daemon.ConnectionEvents
 import com.fr.husi.proto.daemon.Group
 import com.fr.husi.proto.daemon.GroupItem
 import com.fr.husi.proto.v1.URLTestOptions
+import com.fr.husi.repository.resolveRepository
+import com.fr.husi.resources.Res
+import com.fr.husi.resources.ip_test_no_servers
+import com.fr.husi.ui.StringOrRes
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -78,6 +87,8 @@ data class DashboardState(
     val rxRateDirect: Long = 0,
     val proxySpeedHistory: List<Float> = idleSpeedHistory(),
     val directSpeedHistory: List<Float> = idleSpeedHistory(),
+    val ipProbe: IPProbeState = IPProbeState(),
+    val canProbeIP: Boolean = false,
     val ipv4: String? = null,
     val ipv6: String? = null,
     val selectedClashMode: String = "",
@@ -379,6 +390,7 @@ class DashboardViewModel(
     private val processInfoResolver = ProcessInfoResolver()
 
     suspend fun initialize(isConnected: Boolean) {
+        ipProbeJob?.cancelAndJoin()
         statusJob?.cancel()
         groupsJob?.cancel()
         outboundsJob?.cancel()
@@ -392,6 +404,8 @@ class DashboardViewModel(
         latestProxySets.value = emptyList()
         uiState.update { state ->
             state.copy(
+                ipProbe = IPProbeState(),
+                canProbeIP = isConnected,
                 connections = emptyList(),
                 activeConnectionCount = 0,
                 proxySets = emptyList(),
@@ -966,6 +980,43 @@ class DashboardViewModel(
             Logs.w(e)
         } finally {
             setUrlTestProgress(id, null)
+        }
+    }
+
+    private var ipProbeJob: Job? = null
+
+    fun detectIP() {
+        if (!uiState.value.canProbeIP || ipProbeJob?.isActive == true) return
+        ipProbeJob = viewModelScope.launch {
+            uiState.update { it.copy(ipProbe = IPProbeState(isDoing = true)) }
+            try {
+                val server = DataStore.ipTestServers.get().listByLineIgnoringComments().randomOrNull()
+                if (server == null) {
+                    uiState.update {
+                        it.copy(ipProbe = IPProbeState(error = StringOrRes.Res(Res.string.ip_test_no_servers)))
+                    }
+                    return@launch
+                }
+                val client = coreClient
+                val ip = client.detectIP(server)
+                uiState.update { it.copy(ipProbe = IPProbeState(isDoing = true, ip = ip)) }
+                // GeoIP belongs to this app's bundled pack, including when the exit is remote.
+                val countryClient = if (isRemote) {
+                    GlobalContext.get().get<CoreClient>()
+                } else {
+                    client
+                }
+                val country = countryClient.lookupIPCountry(
+                    routeGeoDir(resolveRepository().externalAssetsDir), ip,
+                )
+                uiState.update { it.copy(ipProbe = IPProbeState(ip = ip, countryCode = country)) }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                uiState.update { it.copy(ipProbe = it.ipProbe.copy(error = StringOrRes.Direct(e.readableMessage))) }
+            } finally {
+                uiState.update { it.copy(ipProbe = it.ipProbe.copy(isDoing = false)) }
+            }
         }
     }
 

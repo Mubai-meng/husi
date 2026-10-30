@@ -2,7 +2,7 @@ package com.fr.husi.bg.proto
 
 import com.fr.husi.core.chainHops
 import com.fr.husi.core.matchedOutbound
-import com.fr.husi.fmt.TAG_DIRECT
+import com.fr.husi.fmt.SingBoxOptions
 import com.fr.husi.fmt.TrafficNode
 import com.fr.husi.proto.daemon.Connection
 import com.fr.husi.proto.daemon.ConnectionEvent
@@ -22,9 +22,12 @@ class TrafficSnapshot(
     val byProfile: Map<Long, TrafficDelta>,
     /** Proxied bytes, counted once per connection however long its chain is. */
     val proxied: TrafficDelta,
-    /** Bytes routed to the direct outbound. */
+    /** Bytes routed to the outbounds that leave the device without a proxy. */
     val direct: TrafficDelta,
 )
+
+/** Outbound types that reach the destination without a proxy server. */
+private val directOutboundTypes = setOf(SingBoxOptions.TYPE_DIRECT, SingBoxOptions.TYPE_BRIDGE)
 
 /**
  * Attributes connection traffic to the profiles that carried it.
@@ -134,11 +137,8 @@ class OutboundTrafficAggregator(private val graph: Map<String, TrafficNode> = em
     )
 
     private fun credit(attribution: Attribution, upload: Long, download: Long) {
-        if (attribution.direct) {
-            directCounter.add(upload, download)
-            return
-        }
-        proxiedCounter.add(upload, download)
+        val counter = if (attribution.direct) directCounter else proxiedCounter
+        counter.add(upload, download)
         for (id in attribution.profileIDs) {
             profileCounters.computeIfAbsent(id) { Counter() }.add(upload, download)
         }
@@ -148,14 +148,14 @@ class OutboundTrafficAggregator(private val graph: Map<String, TrafficNode> = em
         // 测速回环入站的连接: 测量消耗, 不计入流量统计。
         if (inbound == SPEEDTEST_INBOUND_TAG) return null
         val matched = matchedOutbound().ifEmpty { return null }
-        if (matched !in graph) {
-            return if (matched == TAG_DIRECT) {
-                Attribution(emptySet(), direct = true)
-            } else {
-                null // Rejected, hijacked or otherwise not a profile of ours.
-            }
+        // outbound is the hop that dials; a detour behind it still means a proxy.
+        val direct = outboundType in directOutboundTypes && graph[outbound]?.detour == null
+        val profileIDs = when {
+            matched in graph -> carriers(matched)
+            direct -> emptySet()
+            else -> return null // Rejected, hijacked or otherwise not a profile of ours.
         }
-        return Attribution(carriers(matched), direct = false)
+        return Attribution(profileIDs, direct)
     }
 
     /** Walks from the matched outbound down to the hop that dials. */

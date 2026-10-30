@@ -141,6 +141,7 @@
     <string name="route_name">Route Name</string>
     <string name="proxy">Proxy</string>
     <string name="direct">Direct</string>
+    <string name="dashboard_speed">Speed</string>
     <string name="route_block">Block</string>
     <string name="route_bridge">Bridge</string>
     <string name="select_profile">Select Profile</string>
@@ -593,6 +594,8 @@
     <string name="desktop_plugins">Desktop Plugins</string>
     <string name="custom_plugin_prefix">Custom plugin prefix</string>
     <string name="custom_plugin_prefix_summary">Please make sure you totally trust the plugin provider.</string>
+    <string name="advanced_features">Advanced features</string>
+    <string name="advanced_features_summary">One feature per line: key or key=value</string>
     <string name="traffic_status">Stats</string>
     <string name="traffic_connections">Connections</string>
     <string name="status_goroutines" translatable="false">Goroutines</string>
@@ -977,4 +980,12 @@
     <string name="speed_test_unit_connections">%1$d</string>
     <string name="speed_test_unit_seconds">%1$d s</string>
     <string name="speed_test_unit_records">%1$d</string>
+    <string name="ip_test">Exit IP</string>
+    <string name="ip_test_detect">Detect IP</string>
+    <string name="ip_test_running">Detecting…</string>
+    <string name="ip_test_servers">IP detection servers</string>
+    <string name="ip_test_servers_summary">Servers used by the dashboard to detect the IP address.</string>
+    <string name="ip_test_servers_description">One server per line. Use stun:host (UDP, default port 3478), turn:host (default port 3478), or turns:host (TLS, default port 5349). TURN servers are used only for STUN binding requests. TURN URIs accept ?transport=udp or ?transport=tcp; TLS requires TCP. Each detection randomly selects one server.</string>
+    <string name="ip_test_no_servers">Configure an IP detection server in miscellaneous settings.</string>
+    <string name="ip_test_start_service">Start the service to detect the main outbound IP.</string>
 </resources>

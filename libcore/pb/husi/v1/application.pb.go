@@ -2292,6 +2292,103 @@ func (x *ReadAndroidVPNTypeResponse) GetType() *AndroidVPNType {
 	return nil
 }
 
+// The first country rule set matching the IP in the host bundled GeoIP pack.
+type LookupIPCountryRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Ip            string                 `protobuf:"bytes,1,opt,name=ip,proto3" json:"ip,omitempty"`
+	Directory     string                 `protobuf:"bytes,2,opt,name=directory,proto3" json:"directory,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *LookupIPCountryRequest) Reset() {
+	*x = LookupIPCountryRequest{}
+	mi := &file_husi_v1_application_proto_msgTypes[38]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *LookupIPCountryRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*LookupIPCountryRequest) ProtoMessage() {}
+
+func (x *LookupIPCountryRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_husi_v1_application_proto_msgTypes[38]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use LookupIPCountryRequest.ProtoReflect.Descriptor instead.
+func (*LookupIPCountryRequest) Descriptor() ([]byte, []int) {
+	return file_husi_v1_application_proto_rawDescGZIP(), []int{38}
+}
+
+func (x *LookupIPCountryRequest) GetIp() string {
+	if x != nil {
+		return x.Ip
+	}
+	return ""
+}
+
+func (x *LookupIPCountryRequest) GetDirectory() string {
+	if x != nil {
+		return x.Directory
+	}
+	return ""
+}
+
+type LookupIPCountryResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	CountryCode   string                 `protobuf:"bytes,1,opt,name=country_code,json=countryCode,proto3" json:"country_code,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *LookupIPCountryResponse) Reset() {
+	*x = LookupIPCountryResponse{}
+	mi := &file_husi_v1_application_proto_msgTypes[39]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *LookupIPCountryResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*LookupIPCountryResponse) ProtoMessage() {}
+
+func (x *LookupIPCountryResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_husi_v1_application_proto_msgTypes[39]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use LookupIPCountryResponse.ProtoReflect.Descriptor instead.
+func (*LookupIPCountryResponse) Descriptor() ([]byte, []int) {
+	return file_husi_v1_application_proto_rawDescGZIP(), []int{39}
+}
+
+func (x *LookupIPCountryResponse) GetCountryCode() string {
+	if x != nil {
+		return x.CountryCode
+	}
+	return ""
+}
+
 var File_husi_v1_application_proto protoreflect.FileDescriptor
 
 const file_husi_v1_application_proto_rawDesc = "" +
@@ -2427,7 +2524,12 @@ const file_husi_v1_application_proto_rawDesc = "" +
 	"\n" +
 	"go_version\x18\x03 \x01(\tR\tgoVersion\"I\n" +
 	"\x1aReadAndroidVPNTypeResponse\x12+\n" +
-	"\x04type\x18\x01 \x01(\v2\x17.husi.v1.AndroidVPNTypeR\x04type*u\n" +
+	"\x04type\x18\x01 \x01(\v2\x17.husi.v1.AndroidVPNTypeR\x04type\"F\n" +
+	"\x16LookupIPCountryRequest\x12\x0e\n" +
+	"\x02ip\x18\x01 \x01(\tR\x02ip\x12\x1c\n" +
+	"\tdirectory\x18\x02 \x01(\tR\tdirectory\"<\n" +
+	"\x17LookupIPCountryResponse\x12!\n" +
+	"\fcountry_code\x18\x01 \x01(\tR\vcountryCode*u\n" +
 	"\n" +
 	"SchemaKind\x12\x1b\n" +
 	"\x17SCHEMA_KIND_UNSPECIFIED\x10\x00\x12\x16\n" +
@@ -2441,8 +2543,7 @@ const file_husi_v1_application_proto_rawDesc = "" +
 	"\fPingProtocol\x12\x1d\n" +
 	"\x19PING_PROTOCOL_UNSPECIFIED\x10\x00\x12\x16\n" +
 	"\x12PING_PROTOCOL_ICMP\x10\x01\x12\x15\n" +
-	"\x11PING_PROTOCOL_TCP\x10\x022\xef\n" +
-	"\n" +
+	"\x11PING_PROTOCOL_TCP\x10\x022\xc5\v\n" +
 	"\x12ApplicationService\x12H\n" +
 	"\vCheckConfig\x12\x1b.husi.v1.CheckConfigRequest\x1a\x1c.husi.v1.CheckConfigResponse\x12K\n" +
 	"\fFormatConfig\x12\x1c.husi.v1.FormatConfigRequest\x1a\x1d.husi.v1.FormatConfigResponse\x12Q\n" +
@@ -2458,7 +2559,8 @@ const file_husi_v1_application_proto_rawDesc = "" +
 	"\fWebDAVUpload\x12\x1c.husi.v1.WebDAVUploadRequest\x1a\x1d.husi.v1.WebDAVUploadResponse(\x01\x12S\n" +
 	"\x0eWebDAVDownload\x12\x1e.husi.v1.WebDAVDownloadRequest\x1a\x1f.husi.v1.WebDAVDownloadResponse0\x01\x12K\n" +
 	"\fWebDAVDelete\x12\x1c.husi.v1.WebDAVDeleteRequest\x1a\x1d.husi.v1.WebDAVDeleteResponse\x123\n" +
-	"\x04Ping\x12\x14.husi.v1.PingRequest\x1a\x15.husi.v1.PingResponse\x12N\n" +
+	"\x04Ping\x12\x14.husi.v1.PingRequest\x1a\x15.husi.v1.PingResponse\x12T\n" +
+	"\x0fLookupIPCountry\x12\x1f.husi.v1.LookupIPCountryRequest\x1a .husi.v1.LookupIPCountryResponse\x12N\n" +
 	"\rMatchRuleSets\x12\x1d.husi.v1.MatchRuleSetsRequest\x1a\x1e.husi.v1.MatchRuleSetsResponse\x12`\n" +
 	"\x13GetRootCertificates\x12#.husi.v1.GetRootCertificatesRequest\x1a$.husi.v1.GetRootCertificatesResponse\x12]\n" +
 	"\x12ReadAndroidVPNType\x12\".husi.v1.ReadAndroidVPNTypeRequest\x1a#.husi.v1.ReadAndroidVPNTypeResponseBE\n" +
@@ -2477,7 +2579,7 @@ func file_husi_v1_application_proto_rawDescGZIP() []byte {
 }
 
 var file_husi_v1_application_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
-var file_husi_v1_application_proto_msgTypes = make([]protoimpl.MessageInfo, 40)
+var file_husi_v1_application_proto_msgTypes = make([]protoimpl.MessageInfo, 42)
 var file_husi_v1_application_proto_goTypes = []any{
 	(SchemaKind)(0),                             // 0: husi.v1.SchemaKind
 	(GetCertMode)(0),                            // 1: husi.v1.GetCertMode
@@ -2520,22 +2622,24 @@ var file_husi_v1_application_proto_goTypes = []any{
 	(*ReadAndroidVPNTypeRequest)(nil),           // 38: husi.v1.ReadAndroidVPNTypeRequest
 	(*AndroidVPNType)(nil),                      // 39: husi.v1.AndroidVPNType
 	(*ReadAndroidVPNTypeResponse)(nil),          // 40: husi.v1.ReadAndroidVPNTypeResponse
-	nil,                                         // 41: husi.v1.HTTPFetchRequest.HeadersEntry
-	nil,                                         // 42: husi.v1.HTTPFetchHead.HeadersEntry
-	(*URLTestOptions)(nil),                      // 43: husi.v1.URLTestOptions
-	(*PluginProcessSpec)(nil),                   // 44: husi.v1.PluginProcessSpec
-	(RootCertificateStore)(0),                   // 45: husi.v1.RootCertificateStore
-	(*daemon.STUNTestProgress)(nil),             // 46: daemon.STUNTestProgress
-	(*daemon.NetworkQualityTestProgress)(nil),   // 47: daemon.NetworkQualityTestProgress
+	(*LookupIPCountryRequest)(nil),              // 41: husi.v1.LookupIPCountryRequest
+	(*LookupIPCountryResponse)(nil),             // 42: husi.v1.LookupIPCountryResponse
+	nil,                                         // 43: husi.v1.HTTPFetchRequest.HeadersEntry
+	nil,                                         // 44: husi.v1.HTTPFetchHead.HeadersEntry
+	(*URLTestOptions)(nil),                      // 45: husi.v1.URLTestOptions
+	(*PluginProcessSpec)(nil),                   // 46: husi.v1.PluginProcessSpec
+	(RootCertificateStore)(0),                   // 47: husi.v1.RootCertificateStore
+	(*daemon.STUNTestProgress)(nil),             // 48: daemon.STUNTestProgress
+	(*daemon.NetworkQualityTestProgress)(nil),   // 49: daemon.NetworkQualityTestProgress
 }
 var file_husi_v1_application_proto_depIdxs = []int32{
 	0,  // 0: husi.v1.GenerateSchemaRequest.kind:type_name -> husi.v1.SchemaKind
-	43, // 1: husi.v1.StandaloneURLTestRequest.options:type_name -> husi.v1.URLTestOptions
-	44, // 2: husi.v1.StandaloneURLTestRequest.plugins:type_name -> husi.v1.PluginProcessSpec
+	45, // 1: husi.v1.StandaloneURLTestRequest.options:type_name -> husi.v1.URLTestOptions
+	46, // 2: husi.v1.StandaloneURLTestRequest.plugins:type_name -> husi.v1.PluginProcessSpec
 	1,  // 3: husi.v1.GetCertRequest.mode:type_name -> husi.v1.GetCertMode
-	41, // 4: husi.v1.HTTPFetchRequest.headers:type_name -> husi.v1.HTTPFetchRequest.HeadersEntry
+	43, // 4: husi.v1.HTTPFetchRequest.headers:type_name -> husi.v1.HTTPFetchRequest.HeadersEntry
 	17, // 5: husi.v1.HTTPFetchRequest.socks5:type_name -> husi.v1.HTTPFetchSocks5
-	42, // 6: husi.v1.HTTPFetchHead.headers:type_name -> husi.v1.HTTPFetchHead.HeadersEntry
+	44, // 6: husi.v1.HTTPFetchHead.headers:type_name -> husi.v1.HTTPFetchHead.HeadersEntry
 	19, // 7: husi.v1.HTTPFetchResponse.head:type_name -> husi.v1.HTTPFetchHead
 	17, // 8: husi.v1.WebDAVServer.socks5:type_name -> husi.v1.HTTPFetchSocks5
 	21, // 9: husi.v1.WebDAVListRequest.server:type_name -> husi.v1.WebDAVServer
@@ -2545,7 +2649,7 @@ var file_husi_v1_application_proto_depIdxs = []int32{
 	21, // 13: husi.v1.WebDAVDownloadRequest.server:type_name -> husi.v1.WebDAVServer
 	21, // 14: husi.v1.WebDAVDeleteRequest.server:type_name -> husi.v1.WebDAVServer
 	2,  // 15: husi.v1.PingRequest.protocol:type_name -> husi.v1.PingProtocol
-	45, // 16: husi.v1.GetRootCertificatesRequest.store:type_name -> husi.v1.RootCertificateStore
+	47, // 16: husi.v1.GetRootCertificatesRequest.store:type_name -> husi.v1.RootCertificateStore
 	39, // 17: husi.v1.ReadAndroidVPNTypeResponse.type:type_name -> husi.v1.AndroidVPNType
 	3,  // 18: husi.v1.ApplicationService.CheckConfig:input_type -> husi.v1.CheckConfigRequest
 	5,  // 19: husi.v1.ApplicationService.FormatConfig:input_type -> husi.v1.FormatConfigRequest
@@ -2561,28 +2665,30 @@ var file_husi_v1_application_proto_depIdxs = []int32{
 	28, // 29: husi.v1.ApplicationService.WebDAVDownload:input_type -> husi.v1.WebDAVDownloadRequest
 	30, // 30: husi.v1.ApplicationService.WebDAVDelete:input_type -> husi.v1.WebDAVDeleteRequest
 	32, // 31: husi.v1.ApplicationService.Ping:input_type -> husi.v1.PingRequest
-	34, // 32: husi.v1.ApplicationService.MatchRuleSets:input_type -> husi.v1.MatchRuleSetsRequest
-	36, // 33: husi.v1.ApplicationService.GetRootCertificates:input_type -> husi.v1.GetRootCertificatesRequest
-	38, // 34: husi.v1.ApplicationService.ReadAndroidVPNType:input_type -> husi.v1.ReadAndroidVPNTypeRequest
-	4,  // 35: husi.v1.ApplicationService.CheckConfig:output_type -> husi.v1.CheckConfigResponse
-	6,  // 36: husi.v1.ApplicationService.FormatConfig:output_type -> husi.v1.FormatConfigResponse
-	8,  // 37: husi.v1.ApplicationService.GenerateSchema:output_type -> husi.v1.GenerateSchemaResponse
-	10, // 38: husi.v1.ApplicationService.StandaloneURLTest:output_type -> husi.v1.StandaloneURLTestResponse
-	12, // 39: husi.v1.ApplicationService.GetCert:output_type -> husi.v1.GetCertResponse
-	46, // 40: husi.v1.ApplicationService.StandaloneSTUNTest:output_type -> daemon.STUNTestProgress
-	47, // 41: husi.v1.ApplicationService.StandaloneNetworkQualityTest:output_type -> daemon.NetworkQualityTestProgress
-	16, // 42: husi.v1.ApplicationService.SpeedTestRun:output_type -> husi.v1.SpeedTestEvent
-	20, // 43: husi.v1.ApplicationService.HTTPFetch:output_type -> husi.v1.HTTPFetchResponse
-	24, // 44: husi.v1.ApplicationService.WebDAVList:output_type -> husi.v1.WebDAVListResponse
-	27, // 45: husi.v1.ApplicationService.WebDAVUpload:output_type -> husi.v1.WebDAVUploadResponse
-	29, // 46: husi.v1.ApplicationService.WebDAVDownload:output_type -> husi.v1.WebDAVDownloadResponse
-	31, // 47: husi.v1.ApplicationService.WebDAVDelete:output_type -> husi.v1.WebDAVDeleteResponse
-	33, // 48: husi.v1.ApplicationService.Ping:output_type -> husi.v1.PingResponse
-	35, // 49: husi.v1.ApplicationService.MatchRuleSets:output_type -> husi.v1.MatchRuleSetsResponse
-	37, // 50: husi.v1.ApplicationService.GetRootCertificates:output_type -> husi.v1.GetRootCertificatesResponse
-	40, // 51: husi.v1.ApplicationService.ReadAndroidVPNType:output_type -> husi.v1.ReadAndroidVPNTypeResponse
-	35, // [35:52] is the sub-list for method output_type
-	18, // [18:35] is the sub-list for method input_type
+	41, // 32: husi.v1.ApplicationService.LookupIPCountry:input_type -> husi.v1.LookupIPCountryRequest
+	34, // 33: husi.v1.ApplicationService.MatchRuleSets:input_type -> husi.v1.MatchRuleSetsRequest
+	36, // 34: husi.v1.ApplicationService.GetRootCertificates:input_type -> husi.v1.GetRootCertificatesRequest
+	38, // 35: husi.v1.ApplicationService.ReadAndroidVPNType:input_type -> husi.v1.ReadAndroidVPNTypeRequest
+	4,  // 36: husi.v1.ApplicationService.CheckConfig:output_type -> husi.v1.CheckConfigResponse
+	6,  // 37: husi.v1.ApplicationService.FormatConfig:output_type -> husi.v1.FormatConfigResponse
+	8,  // 38: husi.v1.ApplicationService.GenerateSchema:output_type -> husi.v1.GenerateSchemaResponse
+	10, // 39: husi.v1.ApplicationService.StandaloneURLTest:output_type -> husi.v1.StandaloneURLTestResponse
+	12, // 40: husi.v1.ApplicationService.GetCert:output_type -> husi.v1.GetCertResponse
+	48, // 41: husi.v1.ApplicationService.StandaloneSTUNTest:output_type -> daemon.STUNTestProgress
+	49, // 42: husi.v1.ApplicationService.StandaloneNetworkQualityTest:output_type -> daemon.NetworkQualityTestProgress
+	16, // 43: husi.v1.ApplicationService.SpeedTestRun:output_type -> husi.v1.SpeedTestEvent
+	20, // 44: husi.v1.ApplicationService.HTTPFetch:output_type -> husi.v1.HTTPFetchResponse
+	24, // 45: husi.v1.ApplicationService.WebDAVList:output_type -> husi.v1.WebDAVListResponse
+	27, // 46: husi.v1.ApplicationService.WebDAVUpload:output_type -> husi.v1.WebDAVUploadResponse
+	29, // 47: husi.v1.ApplicationService.WebDAVDownload:output_type -> husi.v1.WebDAVDownloadResponse
+	31, // 48: husi.v1.ApplicationService.WebDAVDelete:output_type -> husi.v1.WebDAVDeleteResponse
+	33, // 49: husi.v1.ApplicationService.Ping:output_type -> husi.v1.PingResponse
+	42, // 50: husi.v1.ApplicationService.LookupIPCountry:output_type -> husi.v1.LookupIPCountryResponse
+	35, // 51: husi.v1.ApplicationService.MatchRuleSets:output_type -> husi.v1.MatchRuleSetsResponse
+	37, // 52: husi.v1.ApplicationService.GetRootCertificates:output_type -> husi.v1.GetRootCertificatesResponse
+	40, // 53: husi.v1.ApplicationService.ReadAndroidVPNType:output_type -> husi.v1.ReadAndroidVPNTypeResponse
+	36, // [36:54] is the sub-list for method output_type
+	18, // [18:36] is the sub-list for method input_type
 	18, // [18:18] is the sub-list for extension type_name
 	18, // [18:18] is the sub-list for extension extendee
 	0,  // [0:18] is the sub-list for field type_name
@@ -2609,7 +2715,7 @@ func file_husi_v1_application_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_husi_v1_application_proto_rawDesc), len(file_husi_v1_application_proto_rawDesc)),
 			NumEnums:      3,
-			NumMessages:   40,
+			NumMessages:   42,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

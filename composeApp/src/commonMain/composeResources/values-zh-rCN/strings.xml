@@ -139,6 +139,7 @@
     <string name="apply">应用</string>
     <string name="proxy">代理</string>
     <string name="direct">直连</string>
+    <string name="dashboard_speed">速度</string>
     <string name="route_block">屏蔽</string>
     <!-- TODO add better translation for "bridge" -->
     <string name="route_bridge">Bridge</string>
@@ -520,6 +521,8 @@
     <string name="desktop_plugins">桌面插件</string>
     <string name="custom_plugin_prefix">自定义插件前缀</string>
     <string name="custom_plugin_prefix_summary">请确定您完全信任插件提供者</string>
+    <string name="advanced_features">高级功能</string>
+    <string name="advanced_features_summary">每行一项：key 或 key=value</string>
     <string name="traffic_status">状态</string>
     <string name="traffic_connections">连接</string>
     <string name="status_memory">内存</string>
@@ -901,4 +904,12 @@
     <string name="speed_test_unit_connections">%1$d</string>
     <string name="speed_test_unit_seconds">%1$d 秒</string>
     <string name="speed_test_unit_records">%1$d</string>
+    <string name="ip_test">出口 IP</string>
+    <string name="ip_test_detect">检测 IP</string>
+    <string name="ip_test_running">正在检测…</string>
+    <string name="ip_test_servers">IP 检测服务器</string>
+    <string name="ip_test_servers_summary">用于仪表盘探测 IP 的服务器。</string>
+    <string name="ip_test_servers_description">一行一个，使用 stun:host（UDP，默认端口 3478）、turn:host（默认端口 3478）或 turns:host（TLS，默认端口 5349）。TURN 服务器仅用于 STUN 绑定请求。TURN URI 可添加 ?transport=udp 或 ?transport=tcp，TLS 必须使用 TCP。每次检测随机选择一个服务器。</string>
+    <string name="ip_test_no_servers">请先在杂项设置中填写 IP 检测服务器。</string>
+    <string name="ip_test_start_service">启动服务后可检测主出口 IP。</string>
 </resources>
